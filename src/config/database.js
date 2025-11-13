@@ -11,6 +11,8 @@ const connectDatabase = async () => {
     if (config.app.nodeEnv !== 'test') {
       // eslint-disable-next-line no-console
       console.log('MongoDB connected');
+      // eslint-disable-next-line no-console
+      console.log('Loaded MONGO_URI');
     }
   } catch (error) {
     // eslint-disable-next-line no-console

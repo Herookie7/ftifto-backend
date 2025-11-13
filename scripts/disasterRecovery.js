@@ -134,12 +134,12 @@ const main = async () => {
     await mongoose.connection.close();
 
     runCommand('npm', ['run', 'migrate:up'], {
-      MONGODB_URI: options.targetUri
+      MONGO_URI: options.targetUri
     });
     report.migrateStatus = 'success';
 
     runCommand('npm', ['run', 'verify'], {
-      MONGODB_URI: options.targetUri
+      MONGO_URI: options.targetUri
     });
     report.verifyStatus = 'success';
     report.status = 'completed';

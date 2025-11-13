@@ -28,10 +28,7 @@ const deriveVerifyUri = () => {
     parsed.pathname = `/${existingDb}-verify`;
     return parsed.toString();
   } catch (error) {
-    logger.warn('Failed to derive BACKUP_VERIFY_URI from base URI, falling back to default tifto-verify', {
-      error: error.message
-    });
-    return 'mongodb://127.0.0.1:27017/tifto-verify';
+    throw new Error('Failed to derive BACKUP_VERIFY_URI from MONGO_URI. Please set BACKUP_VERIFY_URI explicitly or ensure MONGO_URI is valid.');
   }
 };
 

@@ -9,8 +9,10 @@ services:
       - "${PORT:-8001}:8001"
     environment:
       PORT: 8001
-      MONGODB_URI: mongodb://mongo:27017/tifto
-      JWT_SECRET: change-me
+      # Note: For local Docker development, set MONGO_URI and JWT_SECRET via .env file
+      # or override these values in docker-compose.override.yml
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/tifto}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
       TOKEN_EXPIRY: 7d
       CORS_ORIGINS: http://localhost:3000,http://localhost:8081
       SOCKET_ALLOW_ORIGINS: http://localhost:3000,http://localhost:8081

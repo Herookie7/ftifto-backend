@@ -18,7 +18,7 @@ const fetch =
 
 const REQUIRED_ENV_VARS = [
   'NODE_ENV',
-  'MONGODB_URI',
+  'MONGO_URI',
   'JWT_SECRET',
   'REDIS_URL',
   'FCM_PROJECT_ID',

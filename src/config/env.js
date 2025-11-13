@@ -2,11 +2,29 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+// Require MONGO_URI - app cannot boot without it
+// Support both MONGO_URI (preferred) and MONGODB_URI (for backward compatibility with Render secrets)
+const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+if (!mongoUri) {
+  throw new Error('MONGO_URI environment variable is required. Please set it in your .env file or environment.');
+}
+
+// Require JWT_SECRET - app cannot boot without it
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required. Please set it in your .env file or environment.');
+}
+
+// Log that MONGO_URI was loaded (but don't print the value)
+if (mongoUri) {
+  // eslint-disable-next-line no-console
+  console.log('Loaded MONGO_URI');
+}
+
 const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: process.env.PORT || '8001',
-  MONGODB_URI: process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/tifto',
-  JWT_SECRET: process.env.JWT_SECRET || 'dev-secret',
+  MONGODB_URI: mongoUri,
+  JWT_SECRET: process.env.JWT_SECRET,
   TOKEN_EXPIRY: process.env.TOKEN_EXPIRY || '7d',
   CORS_ORIGINS: process.env.CORS_ORIGINS || '*',
   LOG_LEVEL: process.env.LOG_LEVEL || 'dev',

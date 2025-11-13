@@ -16,7 +16,7 @@ if (!backupKey) {
   process.exit(1);
 }
 
-const targetUri = targetUriArg || process.env.TARGET_MONGODB_URI || config.db.uri;
+const targetUri = targetUriArg || process.env.TARGET_MONGO_URI || config.db.uri;
 
 const ensureConfig = () => {
   const bucket = config.backups?.bucket;

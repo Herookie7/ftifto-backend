@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * USAGE: node scripts/migrate.js [up|down|list]
- * Requires: MONGODB_URI (or equivalent env configured via src/config)
+ * Requires: MONGO_URI (or equivalent env configured via src/config)
  * Example: node scripts/migrate.js up
  */
 const { migrateUp, migrateDown, listMigrations } = require('../src/migrations/runner');

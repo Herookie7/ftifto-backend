@@ -10,8 +10,8 @@ services:
         value: 18
       - key: PORT
         value: 8001
-      - key: MONGODB_URI
-        fromSecret: MONGODB_URI
+      - key: MONGO_URI
+        fromSecret: MONGO_URI
       - key: JWT_SECRET
         fromSecret: JWT_SECRET
       - key: TOKEN_EXPIRY

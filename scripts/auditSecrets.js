@@ -16,7 +16,7 @@ const COLORS = {
 };
 
 const REQUIRED_SECRETS = [
-  { key: 'MONGODB_URI', label: 'MongoDB URI', critical: true },
+  { key: 'MONGO_URI', label: 'MongoDB URI', critical: true },
   { key: 'JWT_SECRET', label: 'JWT Secret', critical: true },
   { key: 'AWS_ACCESS_KEY_ID', label: 'AWS Access Key', critical: true },
   { key: 'AWS_SECRET_ACCESS_KEY', label: 'AWS Secret Key', critical: true },

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * USAGE: node scripts/backupMongo.js [--prefix backups/] [--tag nightly]
- * Requires: MONGODB_URI, AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (or AWS_S3_* variants), AWS_S3_BUCKET (or S3_BUCKET)
+ * Requires: MONGO_URI, AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (or AWS_S3_* variants), AWS_S3_BUCKET (or S3_BUCKET)
  * Example: node scripts/backupMongo.js --prefix nightly/
  */
 const mongoose = require('mongoose');

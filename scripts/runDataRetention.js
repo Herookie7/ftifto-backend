@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * USAGE: node scripts/runDataRetention.js [--dry-run]
- * Requires: MONGODB_URI, AWS credentials (for report upload), DATA_RETENTION_DAYS
+ * Requires: MONGO_URI, AWS credentials (for report upload), DATA_RETENTION_DAYS
  * Example: DATA_RETENTION_DAYS=180 node scripts/runDataRetention.js --dry-run
  */
 const mongoose = require('mongoose');
