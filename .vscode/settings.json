@@ -1,0 +1,12 @@
+{
+  "editor.formatOnSave": true,
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.git": true
+  },
+  "eslint.workingDirectories": ["./ftifto-backend"],
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true
+  }
+}

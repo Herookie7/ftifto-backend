@@ -1,0 +1,49 @@
+name: Data Retention
+
+on:
+  schedule:
+    - cron: '0 5 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      DATA_RETENTION_DAYS: ${{ vars.DATA_RETENTION_DAYS }}
+    defaults:
+      run:
+        working-directory: ftifto-backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ftifto-backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Run data retention job
+        id: retention
+        run: |
+          node scripts/runDataRetention.js > retention-summary.json
+
+      - name: Upload retention summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-retention-summary
+          path: ftifto-backend/retention-summary.json
+          retention-days: 30
+
+

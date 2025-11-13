@@ -1,0 +1,48 @@
+name: Audit Log Rollup
+
+on:
+  schedule:
+    - cron: '30 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rollup:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ftifto-backend
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ftifto-backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Roll-up audit logs
+        id: rollup
+        run: |
+          node scripts/rollupAuditLogs.js --days 1 > audit-rollup-summary.json
+          cat audit-rollup-summary.json
+          echo "summary=$(cat audit-rollup-summary.json | jq -c '.')" >> $GITHUB_OUTPUT
+
+      - name: Upload roll-up summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-rollup-summary
+          path: ftifto-backend/audit-rollup-summary.json
+          retention-days: 30
+

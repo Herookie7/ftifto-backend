@@ -1,0 +1,167 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_API_URL: ${{ secrets.DEPLOY_API_URL }}
+      DEPLOY_SOCKET_URL: ${{ secrets.DEPLOY_SOCKET_URL }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: ftifto-backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ftifto-backend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: ftifto-backend
+        run: npm test
+
+      - name: Run security audit
+        working-directory: ftifto-backend
+        run: npm run audit
+
+      - name: Validate deployment secrets
+        if: github.ref == 'refs/heads/main'
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          if [ -z "$SENTRY_DSN" ]; then
+            echo "SENTRY_DSN secret is required before deployment."
+            exit 1
+          fi
+          if [ -z "$JWT_SECRET" ]; then
+            echo "JWT_SECRET secret is required before deployment."
+            exit 1
+          fi
+
+      - name: Determine package version
+        id: pkg
+        working-directory: ftifto-backend
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+
+      - name: Create semantic version tag
+        if: github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ steps.pkg.outputs.version }}';
+            const tag = `v${version}`;
+
+            try {
+              await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`
+              });
+              core.info(`Tag ${tag} already exists`);
+            } catch (error) {
+              if (error.status === 404) {
+                await github.rest.git.createRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `refs/tags/${tag}`,
+                  sha: context.sha
+                });
+                core.info(`Created tag ${tag}`);
+              } else {
+                throw error;
+              }
+            }
+
+      - name: Build Docker image
+        working-directory: ftifto-backend
+        run: docker build -t tifto/ftifto-backend:${{ github.sha }} .
+
+      - name: Deploy to Render/Railway
+        if: github.ref == 'refs/heads/main'
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          RAILWAY_DEPLOY_HOOK: ${{ secrets.RAILWAY_DEPLOY_HOOK }}
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK" ]; then
+            curl -X POST "$RENDER_DEPLOY_HOOK"
+          fi
+          if [ -n "$RAILWAY_DEPLOY_HOOK" ]; then
+            curl -X POST "$RAILWAY_DEPLOY_HOOK"
+          fi
+
+      - name: Wait for deployment health
+        env:
+          DEFAULT_API_URL: https://ftifto-backend.onrender.com/api
+        run: |
+          API_URL=${DEPLOY_API_URL:-$DEFAULT_API_URL}
+          echo "Checking deployment health at ${API_URL}"
+          for attempt in {1..10}; do
+            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/health" || true)
+            VERSION_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/version" || true)
+            if [ "$HEALTH_STATUS" = "200" ] && [ "$VERSION_STATUS" = "200" ]; then
+              echo "Deployment healthy"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: health=${HEALTH_STATUS}, version=${VERSION_STATUS}"
+            sleep 10
+          done
+          echo "Deployment health verification failed"
+          exit 1
+
+      - name: Run load test
+        if: github.ref == 'refs/heads/main'
+        env:
+          DEFAULT_API_URL: https://ftifto-backend.onrender.com/api
+        working-directory: ftifto-backend
+        run: |
+          API_URL=${DEPLOY_API_URL:-$DEFAULT_API_URL}
+          echo "Running load test against ${API_URL}/v1/health"
+          npx artillery quick --count 5 --num 10 "${API_URL}/v1/health" --output artillery-report.json
+          echo "Load test summary:"
+          cat artillery-report.json
+          rm artillery-report.json
+
+      - name: Generate deployment artifact
+        if: github.ref == 'refs/heads/main'
+        env:
+          DEFAULT_API_URL: https://ftifto-backend.onrender.com/api
+          DEFAULT_SOCKET_URL: https://ftifto-backend.onrender.com
+        run: |
+          API_URL=${DEPLOY_API_URL:-$DEFAULT_API_URL}
+          SOCKET_URL=${DEPLOY_SOCKET_URL:-$DEFAULT_SOCKET_URL}
+          VERSION=${{ steps.pkg.outputs.version }}
+          cat <<'EOF' > deployment.json
+{
+  "apiUrl": "API_URL_PLACEHOLDER",
+  "socketUrl": "SOCKET_URL_PLACEHOLDER",
+  "version": "VERSION_PLACEHOLDER"
+}
+EOF
+          sed -i "s#API_URL_PLACEHOLDER#${API_URL}#g" deployment.json
+          sed -i "s#SOCKET_URL_PLACEHOLDER#${SOCKET_URL}#g" deployment.json
+          sed -i "s#VERSION_PLACEHOLDER#${VERSION}#g" deployment.json
+
+      - name: Commit deployment artifact to deploy-artifacts branch
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin deploy-artifacts || true
+          git checkout -B deploy-artifacts
+          git add deployment.json
+          git commit -m "chore: update deployment artifact" || echo "No changes to commit"
+          git push origin deploy-artifacts
+

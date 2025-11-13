@@ -1,0 +1,61 @@
+name: Compliance Audit
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ftifto-backend
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ftifto-backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Run compliance audit
+        id: compliance
+        run: |
+          node scripts/auditSecrets.js --json --output compliance-summary.json
+          cat compliance-summary.json
+          echo "summary=$(cat compliance-summary.json | jq -c '.')" >> $GITHUB_OUTPUT
+
+      - name: Upload compliance artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-summary
+          path: ftifto-backend/compliance-summary.json
+          retention-days: 14
+
+      - name: Post to Slack
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -X POST -H 'Content-Type: application/json' \
+            -d "{\"text\":\"Weekly compliance audit completed. Summary:\\n\`\`\`${{ steps.compliance.outputs.summary }}\`\`\`\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+      - name: Post to Discord
+        if: env.DISCORD_WEBHOOK_URL != ''
+        run: |
+          curl -X POST -H 'Content-Type: application/json' \
+            -d "{\"content\":\"Weekly compliance audit completed. Summary:\n\`\`\`${{ steps.compliance.outputs.summary }}\`\`\`\"}" \
+            "$DISCORD_WEBHOOK_URL"
+

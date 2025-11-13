@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: ftifto-backend
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+      - key: PORT
+        value: 8001
+      - key: MONGODB_URI
+        fromSecret: MONGODB_URI
+      - key: JWT_SECRET
+        fromSecret: JWT_SECRET
+      - key: TOKEN_EXPIRY
+        value: 7d
+      - key: CORS_ORIGINS
+        value: https://*.tifto.com,http://localhost:3000,http://localhost:8081
+      - key: SOCKET_ALLOW_ORIGINS
+        value: https://*.tifto.com,http://localhost:3000,http://localhost:8081
+      - key: API_BASE_URL
+        value: https://ftifto-backend.onrender.com/api
+      - key: FCM_PROJECT_ID
+        fromSecret: FCM_PROJECT_ID
+      - key: FCM_CLIENT_EMAIL
+        fromSecret: FCM_CLIENT_EMAIL
+      - key: FCM_PRIVATE_KEY
+        fromSecret: FCM_PRIVATE_KEY
+      - key: LOGTAIL_SOURCE_TOKEN
+        fromSecret: LOGTAIL_SOURCE_TOKEN
+      - key: GA_MEASUREMENT_ID
+        fromSecret: GA_MEASUREMENT_ID
+      - key: GA_API_SECRET
+        fromSecret: GA_API_SECRET
+

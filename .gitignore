@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.env
+.DS_Store
+coverage
+dist
+backup-report.json
+retention-summary.json
+logs/
+
