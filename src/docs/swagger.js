@@ -1,9 +1,19 @@
-const path = require('path');
 const swaggerJsdoc = require('swagger-jsdoc');
 
 const options = {
-  failOnErrors: false,
-  apis: [path.join(__dirname, './spec.yaml'), path.join(__dirname, '../routes/**/*.js')]
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Tifto API',
+      version: '1.0.0'
+    },
+    servers: [
+      {
+        url: '/api/v1'
+      }
+    ]
+  },
+  apis: ['./src/routes/**/*.js', './src/models/**/*.js']
 };
 
 const swaggerSpec = swaggerJsdoc(options);

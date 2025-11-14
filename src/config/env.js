@@ -35,7 +35,7 @@ const env = {
   FCM_PRIVATE_KEY_BASE64: process.env.FCM_PRIVATE_KEY_BASE64 || '',
   RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX) || 100,
-  DOCS_ROUTE: process.env.DOCS_ROUTE || '/docs',
+  DOCS_ROUTE: process.env.DOCS_ROUTE || '/api/v1/docs',
   API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:8001/api',
   LOGTAIL_SOURCE_TOKEN: process.env.LOGTAIL_SOURCE_TOKEN || '',
   GA_MEASUREMENT_ID: process.env.GA_MEASUREMENT_ID || '',

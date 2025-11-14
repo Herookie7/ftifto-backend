@@ -8,8 +8,8 @@ const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const hpp = require('hpp');
-const swaggerUi = require('swagger-ui-express');
 const mongoose = require('mongoose');
+const swaggerUi = require('swagger-ui-express');
 const os = require('os');
 const { version } = require('../package.json');
 const config = require('./config');
@@ -22,6 +22,8 @@ const logger = require('./logger');
 const metrics = require('./metrics');
 const metricsRouter = require('./routes/metrics.routes');
 const Sentry = require('@sentry/node');
+
+const docsRoute = config.docs.route || '/api/v1/docs';
 
 const app = express();
 
@@ -132,7 +134,7 @@ app.get('/', (req, res) => {
     status: 'ok',
     message: 'Welcome to the unified Tifto API',
     links: {
-      docs: config.docs.route,
+      docs: docsRoute,
       status: '/status',
       metrics: '/metrics',
       portal: '/portal'
@@ -205,7 +207,7 @@ app.get('/status', (req, res) => {
         <dt>Requests Served</dt><dd>${requestsServed}</dd>
         <dt>Hostname</dt><dd>${os.hostname()}</dd>
         <dt>Portal</dt><dd><a href="/portal">/portal</a></dd>
-        <dt>Docs</dt><dd><a href="${config.docs.route}">${config.docs.route}</a></dd>
+        <dt>Docs</dt><dd><a href="${docsRoute}">${docsRoute}</a></dd>
         <dt>Status</dt><dd><a href="/status">/status</a></dd>
         <dt>Metrics</dt><dd><a href="/metrics">/metrics</a></dd>
       </dl>
@@ -223,7 +225,7 @@ const setDocsCache = (req, res, next) => {
   next();
 };
 
-app.use(config.docs.route, setDocsCache, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use(docsRoute, setDocsCache, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use('/metrics', metricsRouter);
 
