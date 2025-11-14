@@ -155,7 +155,6 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-orderSchema.index({ orderId: 1 });
 orderSchema.index({ restaurant: 1, orderStatus: 1 });
 orderSchema.index({ rider: 1, orderStatus: 1 });
 orderSchema.index({ customer: 1, createdAt: -1 });

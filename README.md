@@ -455,8 +455,9 @@ These schemas reflect the structures consumed throughout the web and mobile clie
   1. Push this repository to GitHub.
   2. In Render, **New → Web Service → Build & Deploy from a repo**. Render will detect `render.yaml` automatically.
   3. Confirm the build (`npm install`) and start (`npm run start`) commands.
-  4. Add the Atlas URI, JWT secret, and FCM credentials as Render secrets (`MONGODB_URI`, `JWT_SECRET`, `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`).
-  5. Deploy — Render exposes the API at `https://ftifto-backend.onrender.com`.
+  4. In MongoDB Atlas, navigate to **Network Access → Add IP Address** and choose **ALLOW ACCESS FROM ANYWHERE (0.0.0.0/0)** so Render can reach your cluster.
+  5. Add the Atlas URI, JWT secret, and FCM credentials as Render secrets (`MONGODB_URI`, `JWT_SECRET`, `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`).
+  6. Deploy — Render exposes the API at `https://ftifto-backend.onrender.com`.
 - Railway alternative:
   1. Create a new Railway project from this GitHub repo.
   2. Add a MongoDB add-on or configure `MONGODB_URI` with your Atlas connection string.
@@ -465,6 +466,8 @@ These schemas reflect the structures consumed throughout the web and mobile clie
 - GitHub Actions workflows orchestrate deployment and communication:
   - `.github/workflows/deploy.yml` deploys commits from `develop` to the Render **ftifto-staging** service and published tags from `main` to **ftifto-production**, refreshing `deploy-artifacts/deployment.json` with the latest URLs for both environments.
   - `.github/workflows/release-notes.yml` aggregates commits since the previous tag, appends them to `CHANGELOG.md`, and publishes formatted notes (including staging/production URLs) to Slack/Discord webhooks.
+
+> Note: Mongoose automatically creates the indexes defined in each schema during startup; avoid adding redundant `schema.index({ field: 1 })` definitions for fields already marked with `unique: true` or `index: true`.
 
 After deployment, update each client app's environment (`SERVER_REST_URL`, `SOCKET_URL`) to the Render/Railway URL, verify `/health`, `/version`, `/docs`, and confirm Socket.IO events propagate across roles.
 
