@@ -28,6 +28,17 @@ const connectDatabase = async () => {
         console.log('Loaded MONGO_URI');
       }
 
+      // Run demo seed after DB connection (safe & idempotent)
+      if (config.app.nodeEnv === 'production' || config.app.isRender) {
+        try {
+          const runDemoSeed = require('../../scripts/demoSeed');
+          await runDemoSeed();
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.log('Demo seed skipped:', err.message);
+        }
+      }
+
       return;
     } catch (error) {
       const isTimeoutError = error?.name === 'MongooseServerSelectionError';

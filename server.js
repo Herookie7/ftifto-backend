@@ -17,6 +17,9 @@ const secretsProvider = require('./src/config/secretsProvider');
 const startServer = async () => {
   await connectDatabase();
 
+  // Note: Demo seed runs automatically in database.js after connection
+  // This ensures seeding happens at the right time (after DB is connected)
+
   const server = http.createServer(app);
   initializeRealtime(server);
   initializeFirebase();

@@ -10,6 +10,9 @@
     "test": "jest",
     "verify": "node scripts/verifyDeployment.js",
     "seed": "node scripts/seed.js",
+    "seed:demo": "node scripts/demoSeed.js",
+    "seed:full": "node scripts/seedDemoData.js",
+    "seed:render": "node scripts/seedDemoData.js",
     "setup": "npm install && npm run seed && npm run verify && npx open-cli http://localhost:8001/status",
     "docs:build": "node scripts/buildDocs.js",
     "pre-release": "node scripts/preReleaseCheck.js",
@@ -76,7 +79,11 @@
     "swagger-ui-express": "^5.0.0",
     "unzipper": "^0.11.0",
     "winston": "^3.13.0",
-    "xss-clean": "^0.1.4"
+    "xss-clean": "^0.1.4",
+    "apollo-server-express": "^3.12.1",
+    "graphql": "^16.8.1",
+    "graphql-tag": "^2.12.6",
+    "subscriptions-transport-ws": "^0.11.0"
   },
   "devDependencies": {
     "artillery": "^2.0.1",
