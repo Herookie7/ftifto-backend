@@ -12,6 +12,10 @@ const customerRoutes = require('../customer.routes');
 const versionRoutes = require('../version.routes');
 const paymentsRoutes = require('../payments.routes');
 const privacyRoutes = require('../privacy.routes');
+const restaurantRoutes = require('../restaurantRoutes');
+const categoryRoutes = require('../categoryRoutes');
+const multivendorAuthRoutes = require('../authRoutes');
+const addressRoutes = require('../addressRoutes');
 
 const router = express.Router();
 
@@ -27,6 +31,10 @@ router.use('/customer', customerRoutes);
 router.use('/version', versionRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/privacy', privacyRoutes);
+router.use('/', restaurantRoutes);
+router.use('/', categoryRoutes);
+router.use('/', multivendorAuthRoutes);
+router.use('/', addressRoutes);
 
 module.exports = router;
 
