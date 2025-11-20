@@ -91,7 +91,45 @@ const restaurantSchema = new mongoose.Schema(
     },
     shopType: { type: String, trim: true },
     openingTimes: [openingTimesSchema],
-    notificationToken: { type: String, trim: true }
+    notificationToken: { type: String, trim: true },
+    orderId: { type: String, trim: true },
+    sections: [{ type: String, trim: true }],
+    keywords: [{ type: String, trim: true }],
+    reviewCount: { type: Number, default: 0 },
+    reviewAverage: { type: Number, default: 0 },
+    restaurantUrl: { type: String, trim: true },
+    stripeDetailsSubmitted: { type: Boolean, default: false },
+    enableNotification: { type: Boolean, default: true },
+    username: { type: String, trim: true },
+    password: { type: String, trim: true },
+    categories: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Category'
+      }
+    ],
+    options: [
+      {
+        title: { type: String, trim: true },
+        description: { type: String, trim: true },
+        price: { type: Number }
+      }
+    ],
+    addons: [
+      {
+        title: { type: String, trim: true },
+        description: { type: String, trim: true },
+        quantityMinimum: { type: Number, default: 0 },
+        quantityMaximum: { type: Number, default: 1 },
+        options: [
+          {
+            title: { type: String, trim: true },
+            description: { type: String, trim: true },
+            price: { type: Number }
+          }
+        ]
+      }
+    ]
   },
   { timestamps: true }
 );

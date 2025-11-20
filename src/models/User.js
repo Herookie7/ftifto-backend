@@ -19,6 +19,9 @@ const locationSchema = new mongoose.Schema(
 const addressSchema = new mongoose.Schema(
   {
     label: { type: String, trim: true },
+    deliveryAddress: { type: String, trim: true },
+    details: { type: String, trim: true },
+    selected: { type: Boolean, default: false },
     street: { type: String, trim: true },
     city: { type: String, trim: true },
     state: { type: String, trim: true },
@@ -27,7 +30,7 @@ const addressSchema = new mongoose.Schema(
     location: locationSchema,
     instructions: { type: String, trim: true }
   },
-  { _id: false, timestamps: true }
+  { timestamps: true }
 );
 
 const riderProfileSchema = new mongoose.Schema(
@@ -83,16 +86,34 @@ const userSchema = new mongoose.Schema(
       default: 'customer'
     },
     avatar: { type: String, trim: true },
+    image: { type: String, trim: true },
     isActive: {
       type: Boolean,
       default: true
     },
+    phoneIsVerified: { type: Boolean, default: false },
+    emailIsVerified: { type: Boolean, default: false },
+    isOrderNotification: { type: Boolean, default: true },
+    isOfferNotification: { type: Boolean, default: true },
+    favourite: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant' }],
+    userType: { type: String, trim: true }, // 'apple', 'google', 'facebook', 'email', 'phone'
+    notificationToken: { type: String, trim: true },
     metadata: {
       type: mongoose.Schema.Types.Mixed
     },
     addressBook: [addressSchema],
     sellerProfile: sellerProfileSchema,
-    riderProfile: riderProfileSchema,
+    riderProfile: {
+      vehicleType: { type: String, trim: true },
+      licenseNumber: { type: String, trim: true },
+      available: { type: Boolean, default: true },
+      location: locationSchema,
+      lastSeenAt: { type: Date, default: Date.now },
+      accountNumber: { type: String, trim: true },
+      currentWalletAmount: { type: Number, default: 0 },
+      totalWalletAmount: { type: Number, default: 0 },
+      withdrawnWalletAmount: { type: Number, default: 0 }
+    },
     preferences: {
       language: { type: String, default: 'en' },
       marketingOptIn: { type: Boolean, default: false }

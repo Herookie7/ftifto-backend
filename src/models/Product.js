@@ -69,6 +69,8 @@ const productSchema = new mongoose.Schema(
     addons: [addonSchema],
     available: { type: Boolean, default: true },
     stock: { type: Number, default: 0 },
+    isOutOfStock: { type: Boolean, default: false },
+    subCategory: { type: String, trim: true },
     nutrition: {
       calories: Number,
       protein: Number,
