@@ -25,21 +25,10 @@ const startServer = async () => {
   initializeFirebase();
   startMetricsPush();
 
-  server.listen(config.app.port, () => {
-    logger.info(`ftifto-backend listening on port ${config.app.port}`);
-    alerts.notifyEvent('Server worker online', {
-      pid: process.pid,
-      port: config.app.port
-    });
-    sendAnalyticsEvent('backend_restart', {
-      worker_pid: process.pid,
-      port: config.app.port,
-      commit_sha: config.build.commitSha || 'unknown'
-    }).catch((error) => {
-      logger.warn('Failed to dispatch backend_restart analytics event', {
-        error: error.message
-      });
-    });
+  const PORT = process.env.PORT || 8001;
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log('Server running on port', PORT);
   });
 
   let isShuttingDown = false;
