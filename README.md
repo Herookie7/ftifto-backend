@@ -1,6 +1,40 @@
 # ftifto-backend
 
-Unified Node.js REST API that powers all Tifto applications (`tifto-admin`, `tifto-customer-app`, `tifto-customer-web`, `tifto-seller-app`, `tifto-rider-app`). The service wraps core platform entities (users, restaurants, products, and orders) with role-aware workflows for admins, sellers, riders, and customers.
+Unified Node.js REST + GraphQL API that powers all Tifto applications (`tifto-admin`, `tifto-customer-app`, `tifto-customer-web`, `tifto-seller-app`, `tifto-rider-app`). The service wraps core platform entities (users, restaurants, products, and orders) with role-aware workflows for admins, sellers, riders, and customers.
+
+## 🚀 Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Set environment variables (create .env file)
+# MONGODB_URI=mongodb+srv://...
+# JWT_SECRET=your-secret-key
+
+# Start server
+npm start
+
+# Seed demo data (optional)
+npm run seed:demo
+```
+
+## 📡 API Endpoints
+
+- **GraphQL**: `http://localhost:8001/graphql`
+- **REST API**: `http://localhost:8001/api/v1`
+- **Health Check**: `http://localhost:8001/api/v1/health`
+- **Status Page**: `http://localhost:8001/status`
+- **API Docs**: `http://localhost:8001/api/v1/docs`
+
+## 🔄 Auto-Seeding
+
+The backend automatically seeds demo data on Render deployment:
+- ✅ Idempotent (won't duplicate data)
+- ✅ Non-blocking (server starts even if seed fails)
+- ✅ Only runs in production/Render environment
+
+To seed manually: `npm run seed:render`
 
 ## Monorepo Insights
 

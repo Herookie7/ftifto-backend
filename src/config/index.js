@@ -50,6 +50,7 @@ const config = {
   app: {
     nodeEnv: env.NODE_ENV,
     isProduction: env.NODE_ENV === 'production',
+    isRender: env.RENDER,
     port: Number(env.PORT)
   },
   db: {

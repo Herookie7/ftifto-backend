@@ -22,6 +22,9 @@ const logger = require('./logger');
 const metrics = require('./metrics');
 const metricsRouter = require('./routes/metrics.routes');
 const Sentry = require('@sentry/node');
+const { ApolloServer } = require('apollo-server-express');
+const typeDefs = require('./graphql/schema');
+const resolvers = require('./graphql/resolvers');
 
 const docsRoute = config.docs.route || '/api/v1/docs';
 
@@ -217,6 +220,52 @@ app.get('/status', (req, res) => {
 });
 
 app.use(maintenance);
+
+// GraphQL Apollo Server setup
+const apolloServer = new ApolloServer({
+  typeDefs,
+  resolvers,
+  context: async ({ req }) => {
+    const token = req.headers.authorization?.split(' ')[1] || null;
+    
+    if (!token) {
+      return { user: null };
+    }
+
+    try {
+      const { verifyToken } = require('./utils/token');
+      const decoded = verifyToken(token);
+      const User = require('./models/User');
+      const user = await User.findById(decoded.id);
+      
+      return { user };
+    } catch (error) {
+      // Token is invalid or expired, return null user
+      logger.warn('Invalid token in GraphQL context', { error: error.message });
+      return { user: null };
+    }
+  },
+  formatError: (err) => {
+    logger.error('GraphQL Error', { error: err.message, stack: err.stack });
+    return {
+      message: err.message,
+      code: err.extensions?.code,
+      path: err.path
+    };
+  }
+});
+
+// Start Apollo Server and apply middleware
+(async () => {
+  try {
+    await apolloServer.start();
+    apolloServer.applyMiddleware({ app, path: '/graphql' });
+    logger.info('GraphQL server started at /graphql');
+  } catch (error) {
+    logger.error('Failed to start GraphQL server', { error: error.message });
+    // Don't crash the app if GraphQL fails to start
+  }
+})();
 
 app.use('/api', routes);
 

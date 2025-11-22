@@ -22,6 +22,7 @@ if (mongoUri) {
 
 const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
+  RENDER: process.env.RENDER === 'true' || process.env.RENDER_SERVICE_NAME !== undefined,
   PORT: process.env.PORT || '8001',
   MONGODB_URI: mongoUri,
   JWT_SECRET: process.env.JWT_SECRET,
