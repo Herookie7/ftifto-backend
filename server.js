@@ -17,20 +17,35 @@ const maintenanceService = require('./src/services/maintenance.service');
 const secretsProvider = require('./src/config/secretsProvider');
 
 const startServer = async () => {
-  try {
-    await connectDatabase();
-    logger.info('Database connected successfully');
-  } catch (error) {
-    logger.error('Database connection failed, but continuing to start server', { error: error.message });
-    // Don't exit - let the server start even if DB connection fails
-    // The app can handle DB connection errors gracefully
-  }
-
-  // Note: Demo seed runs automatically in database.js after connection
-  // This ensures seeding happens at the right time (after DB is connected)
-
   const server = http.createServer(app);
   
+  // Start server listening FIRST so Render can detect the port
+  const PORT = process.env.PORT || 8001;
+  
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.info(`🚀 Server running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+  
+  server.on('error', (error) => {
+    logger.error('Server error', { error: error.message, code: error.code });
+    if (error.code === 'EADDRINUSE') {
+      logger.error(`Port ${PORT} is already in use`);
+      process.exit(1);
+    }
+  });
+
+  // Connect to database in background (non-blocking)
+  // This allows the server to start even if DB connection is slow or fails
+  connectDatabase().then(() => {
+    logger.info('Database connected successfully');
+  }).catch((error) => {
+    logger.error('Database connection failed, but server is running', { error: error.message });
+    // Don't exit - let the server continue running
+    // The app can handle DB connection errors gracefully
+  });
+  
+  // Initialize other services (non-blocking)
   try {
     initializeRealtime(server);
   } catch (error) {
@@ -48,21 +63,6 @@ const startServer = async () => {
   } catch (error) {
     logger.warn('Failed to start metrics push', { error: error.message });
   }
-
-  const PORT = process.env.PORT || 8001;
-
-  server.listen(PORT, '0.0.0.0', () => {
-    logger.info(`🚀 Server running on port ${PORT}`);
-    console.log(`🚀 Server running on port ${PORT}`);
-  });
-  
-  server.on('error', (error) => {
-    logger.error('Server error', { error: error.message, code: error.code });
-    if (error.code === 'EADDRINUSE') {
-      logger.error(`Port ${PORT} is already in use`);
-      process.exit(1);
-    }
-  });
 
   let isShuttingDown = false;
 
