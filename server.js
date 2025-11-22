@@ -1,3 +1,5 @@
+require('./.renderfix.js');
+
 const http = require('http');
 const mongoose = require('mongoose');
 const config = require('./src/config');
@@ -28,7 +30,7 @@ const startServer = async () => {
   const PORT = process.env.PORT || 8001;
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log('Server running on port', PORT);
+    console.log('🚀 Server running on port', PORT);
   });
 
   let isShuttingDown = false;
