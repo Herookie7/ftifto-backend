@@ -29,7 +29,8 @@ const connectDatabase = async () => {
       }
 
       // Run demo seed after DB connection (safe & idempotent)
-      if (config.app.nodeEnv === 'production' || config.app.isRender) {
+      // Only run in non-production environments
+      if (config.app.nodeEnv !== 'production') {
         try {
           const runDemoSeed = require('../../scripts/demoSeed');
           await runDemoSeed();

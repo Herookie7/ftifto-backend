@@ -225,6 +225,8 @@ app.use(maintenance);
 const apolloServer = new ApolloServer({
   typeDefs,
   resolvers,
+  persistedQueries: false,
+  cache: 'bounded',
   context: async ({ req }) => {
     const token = req.headers.authorization?.split(' ')[1] || null;
     
