@@ -221,6 +221,17 @@ app.get('/status', (req, res) => {
 
 app.use(maintenance);
 
+// Add GraphQL routes immediately (before async initialization)
+// This ensures routes exist even if GraphQL initialization is delayed
+app.get('/graphql/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'GraphQL endpoint is available',
+    endpoint: '/graphql',
+    note: 'Use POST method for GraphQL queries'
+  });
+});
+
 // GraphQL Apollo Server setup
 let apolloServer;
 
@@ -269,15 +280,6 @@ const initializeGraphQL = async () => {
     });
     logger.info('GraphQL server started at /graphql');
     console.log('GraphQL server started at /graphql');
-    
-    // Add a simple test endpoint to verify GraphQL is working
-    app.get('/graphql/health', (req, res) => {
-      res.json({ 
-        status: 'ok', 
-        message: 'GraphQL server is running',
-        endpoint: '/graphql'
-      });
-    });
     
     return true;
   } catch (error) {
