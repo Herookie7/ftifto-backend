@@ -282,7 +282,7 @@ const initializeGraphQL = async () => {
   }
 };
 
-// GraphQL health check endpoint
+// GraphQL health check endpoint (must be before /api routes)
 app.get('/graphql/health', (req, res) => {
   res.json({ 
     status: apolloServer ? 'ok' : 'initializing',
@@ -291,6 +291,51 @@ app.get('/graphql/health', (req, res) => {
       : 'GraphQL endpoint is initializing',
     endpoint: '/graphql'
   });
+});
+
+// Explicit GraphQL POST handler (registered synchronously, before notFound middleware)
+// This ensures the route is available even if applyMiddleware has timing issues
+app.post('/graphql', async (req, res) => {
+  if (!apolloServer) {
+    return res.status(503).json({ 
+      errors: [{ message: 'GraphQL server is initializing' }] 
+    });
+  }
+  
+  try {
+    // Extract GraphQL request from body
+    const { query, variables, operationName } = req.body;
+    
+    if (!query) {
+      return res.status(400).json({ 
+        errors: [{ message: 'GraphQL query is required' }] 
+      });
+    }
+    
+    // Execute the GraphQL operation
+    const result = await apolloServer.executeOperation({
+      query,
+      variables: variables || {},
+      operationName: operationName || undefined
+    }, {
+      req,
+      res
+    });
+    
+    // Send the response - handle both single and batch results
+    if (result.body && result.body.kind === 'single') {
+      res.json(result.body.singleResult);
+    } else if (result.body) {
+      res.json(result.body);
+    } else {
+      res.json(result);
+    }
+  } catch (error) {
+    logger.error('GraphQL POST handler error', { error: error.message, stack: error.stack });
+    res.status(500).json({ 
+      errors: [{ message: error.message }] 
+    });
+  }
 });
 
 app.use('/api', routes);
