@@ -221,19 +221,10 @@ app.get('/status', (req, res) => {
 
 app.use(maintenance);
 
-// Add GraphQL health check route immediately (before async initialization)
-// This ensures the endpoint is available even if GraphQL initialization is delayed
-app.get('/graphql/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    message: 'GraphQL endpoint is available',
-    endpoint: '/graphql',
-    note: 'Use POST method for GraphQL queries'
-  });
-});
-
 // GraphQL Apollo Server setup
 let apolloServer;
+let graphQLInitialized = false;
+let graphQLError = null;
 
 const initializeGraphQL = async () => {
   try {
@@ -278,28 +269,63 @@ const initializeGraphQL = async () => {
       path: '/graphql',
       cors: false // CORS is already handled by express cors middleware
     });
+    graphQLInitialized = true;
     logger.info('GraphQL server started at /graphql');
     console.log('GraphQL server started at /graphql');
     
     return true;
   } catch (error) {
+    graphQLError = error;
     logger.error('Failed to start GraphQL server', { error: error.message, stack: error.stack });
     console.error('Failed to start GraphQL server:', error.message, error.stack);
-    // Add a fallback route to provide helpful error message
-    app.get('/graphql', (req, res) => {
-      res.status(503).json({
-        status: 'error',
-        message: 'GraphQL server is not available. Check server logs for details.',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    });
     return false;
   }
 };
 
+// Add fallback routes for GraphQL if initialization fails or is delayed
+app.post('/graphql', (req, res, next) => {
+  if (graphQLInitialized) {
+    return next(); // Let Apollo Server handle it
+  }
+  // GraphQL not ready yet
+  res.status(503).json({
+    status: 'error',
+    message: graphQLError 
+      ? 'GraphQL server failed to initialize. Check server logs for details.'
+      : 'GraphQL server is initializing. Please try again in a moment.',
+    error: process.env.NODE_ENV === 'development' && graphQLError ? graphQLError.message : undefined
+  });
+});
+
+// Update health endpoint to show GraphQL status
+app.get('/graphql/health', (req, res) => {
+  res.json({ 
+    status: graphQLInitialized ? 'ok' : 'initializing',
+    message: graphQLInitialized 
+      ? 'GraphQL endpoint is available' 
+      : 'GraphQL endpoint is initializing',
+    endpoint: '/graphql',
+    initialized: graphQLInitialized,
+    note: 'Use POST method for GraphQL queries'
+  });
+});
+
 // Initialize GraphQL immediately (non-blocking but will complete)
 initializeGraphQL().catch((error) => {
   logger.error('GraphQL initialization failed', { error: error.message, stack: error.stack });
+});
+
+// Add GraphQL health check route (after initialization function is defined)
+app.get('/graphql/health', (req, res) => {
+  res.json({ 
+    status: graphQLInitialized ? 'ok' : 'initializing',
+    message: graphQLInitialized 
+      ? 'GraphQL endpoint is available' 
+      : 'GraphQL endpoint is initializing',
+    endpoint: '/graphql',
+    initialized: graphQLInitialized,
+    note: 'Use POST method for GraphQL queries'
+  });
 });
 
 app.use('/api', routes);
