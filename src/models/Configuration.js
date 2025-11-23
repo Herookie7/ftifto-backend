@@ -14,7 +14,8 @@ const configurationSchema = new mongoose.Schema(
     testOtp: { type: String, trim: true },
     skipMobileVerification: { type: Boolean, default: false },
     skipEmailVerification: { type: Boolean, default: false },
-    costType: { type: String, default: 'fixed' }
+    costType: { type: String, default: 'fixed' },
+    customerAppVersion: { type: String, trim: true }
   },
   { timestamps: true }
 );

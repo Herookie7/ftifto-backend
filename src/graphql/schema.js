@@ -289,6 +289,7 @@ const typeDefs = gql`
     skipMobileVerification: Boolean
     skipEmailVerification: Boolean
     costType: String
+    customerAppVersion: String
   }
 
   type Cuisine {
@@ -341,6 +342,8 @@ const typeDefs = gql`
     reviewOrder(reviewInput: ReviewInput!): Order
     selectAddress(id: String!): User
     updateUser(updateUserInput: UpdateUserInput!): User
+    # Configuration mutations
+    setVersions(customerAppVersion: String!): String
   }
 
   input ReviewInput {

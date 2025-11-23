@@ -597,6 +597,14 @@ const resolvers = {
       await user.save();
 
       return await User.findById(user._id).lean();
+    },
+
+    // Set app versions
+    async setVersions(_, { customerAppVersion }) {
+      const config = await Configuration.getConfiguration();
+      config.customerAppVersion = customerAppVersion;
+      await config.save();
+      return 'success';
     }
   }
 };
