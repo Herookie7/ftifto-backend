@@ -232,6 +232,21 @@ app.get('/graphql/health', (req, res) => {
   });
 });
 
+// Temporary fallback for /graphql until Apollo Server initializes
+// This will be overridden by Apollo Server's middleware once it starts
+let graphQLReady = false;
+app.use('/graphql', (req, res, next) => {
+  if (graphQLReady) {
+    return next(); // Let Apollo Server handle it
+  }
+  // If GraphQL not ready, return helpful error
+  res.status(503).json({
+    status: 'error',
+    message: 'GraphQL server is initializing. Please try again in a moment.',
+    endpoint: '/graphql'
+  });
+});
+
 // GraphQL Apollo Server setup
 let apolloServer;
 
@@ -278,6 +293,7 @@ const initializeGraphQL = async () => {
       path: '/graphql',
       cors: false // CORS is already handled by express cors middleware
     });
+    graphQLReady = true; // Mark GraphQL as ready
     logger.info('GraphQL server started at /graphql');
     console.log('GraphQL server started at /graphql');
     
