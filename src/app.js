@@ -266,16 +266,38 @@ const initializeGraphQL = async () => {
     await apolloServer.start();
     
     // Apply Apollo Server middleware - this handles both GET and POST for /graphql
+    // Note: applyMiddleware must be called AFTER apolloServer.start()
     apolloServer.applyMiddleware({ 
       app, 
       path: '/graphql',
       cors: false // CORS is already handled by express cors middleware
     });
     
+    // Explicitly register GraphQL POST route as fallback
+    // Apollo Server Express v3's applyMiddleware should work, but this ensures the route exists
+    app.post('/graphql', async (req, res, next) => {
+      if (!apolloServer) {
+        return res.status(503).json({ error: 'GraphQL server not initialized' });
+      }
+      try {
+        const context = await apolloServer.context({ req, res });
+        const result = await apolloServer.executeOperation({
+          query: req.body.query,
+          variables: req.body.variables,
+          operationName: req.body.operationName,
+          context
+        });
+        return res.json(result);
+      } catch (error) {
+        return next(error);
+      }
+    });
+    
     graphQLInitialized = true;
     logger.info('GraphQL server started at /graphql');
     console.log('GraphQL server started at /graphql');
     console.log('Apollo Server middleware applied to /graphql');
+    console.log('Explicit GraphQL route handlers registered');
     
     // Verify route is registered by checking app._router
     if (app._router) {
