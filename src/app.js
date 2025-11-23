@@ -354,5 +354,7 @@ if (config.sentry?.dsn) {
 
 app.use(errorHandler);
 
+// Export both app and initializeGraphQL
 module.exports = app;
+module.exports.initializeGraphQL = initializeGraphQL;
 
