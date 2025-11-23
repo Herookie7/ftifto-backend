@@ -332,6 +332,7 @@ const typeDefs = gql`
     users: [User]
     rider(id: String): User
     userFavourite(latitude: Float, longitude: Float): [Restaurant]
+    zones: [Zone]
   }
 
   type Mutation {

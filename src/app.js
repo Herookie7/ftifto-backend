@@ -263,9 +263,11 @@ const apolloServer = new ApolloServer({
     await apolloServer.start();
     apolloServer.applyMiddleware({ app, path: '/graphql' });
     logger.info('GraphQL server started at /graphql');
+    console.log('GraphQL server started at /graphql');
   } catch (error) {
-    logger.error('Failed to start GraphQL server', { error: error.message });
-    // Don't crash the app if GraphQL fails to start
+    logger.error('Failed to start GraphQL server', { error: error.message, stack: error.stack });
+    console.error('Failed to start GraphQL server:', error.message, error.stack);
+    // Don't crash the app if GraphQL fails to start, but log the error
   }
 })();
 

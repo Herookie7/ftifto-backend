@@ -8,6 +8,7 @@ const Cuisine = require('../models/Cuisine');
 const User = require('../models/User');
 const Offer = require('../models/Offer');
 const Section = require('../models/Section');
+const Zone = require('../models/Zone');
 
 const resolvers = {
   Query: {
@@ -470,6 +471,11 @@ const resolvers = {
       }
 
       return restaurants;
+    },
+
+    // Zones query
+    async zones() {
+      return await Zone.find({ isActive: true }).lean();
     }
   },
 
