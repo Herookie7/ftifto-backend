@@ -21,7 +21,7 @@ services:
       - key: SOCKET_ALLOW_ORIGINS
         value: https://*.tifto.com,http://localhost:3000,http://localhost:8081
       - key: API_BASE_URL
-        value: https://ftifto-backend.onrender.com/api
+        value: https://ftifto-backend.onrender.com/api/v1
       - key: FCM_PROJECT_ID
         fromSecret: FCM_PROJECT_ID
       - key: FCM_CLIENT_EMAIL

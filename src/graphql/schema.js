@@ -306,6 +306,23 @@ const typeDefs = gql`
     enabled: Boolean
   }
 
+  type SubCategory {
+    _id: ID
+    title: String
+    parentCategoryId: String
+  }
+
+  type AppVersion {
+    android: String
+    ios: String
+  }
+
+  type Versions {
+    customerAppVersion: AppVersion
+    riderAppVersion: String
+    restaurantAppVersion: String
+  }
+
   type Query {
     # Restaurant queries
     nearByRestaurants(latitude: Float, longitude: Float, shopType: String): RestaurantListResponse
@@ -334,6 +351,9 @@ const typeDefs = gql`
     rider(id: String): User
     userFavourite(latitude: Float, longitude: Float): [Restaurant]
     zones: [Zone]
+    subCategories: [SubCategory]
+    subCategoriesByParentId(parentCategoryId: String!): [SubCategory]
+    getVersions: Versions
   }
 
   type Mutation {

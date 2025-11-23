@@ -476,6 +476,106 @@ const resolvers = {
     // Zones query
     async zones() {
       return await Zone.find({ isActive: true }).lean();
+    },
+
+    // Get app versions
+    async getVersions() {
+      const config = await Configuration.getConfiguration();
+      
+      // Parse customerAppVersion if it's a JSON string, otherwise create default structure
+      let customerAppVersion = { android: null, ios: null };
+      
+      if (config.customerAppVersion) {
+        try {
+          // Try to parse as JSON if it's a string
+          if (typeof config.customerAppVersion === 'string') {
+            const parsed = JSON.parse(config.customerAppVersion);
+            if (parsed.android || parsed.ios) {
+              customerAppVersion = parsed;
+            } else {
+              // If it's just a version string, use it for both platforms
+              customerAppVersion = {
+                android: config.customerAppVersion,
+                ios: config.customerAppVersion
+              };
+            }
+          } else if (typeof config.customerAppVersion === 'object') {
+            customerAppVersion = config.customerAppVersion;
+          }
+        } catch (e) {
+          // If parsing fails, treat as single version string
+          customerAppVersion = {
+            android: config.customerAppVersion,
+            ios: config.customerAppVersion
+          };
+        }
+      }
+      
+      return {
+        customerAppVersion,
+        riderAppVersion: null, // Add if needed
+        restaurantAppVersion: null // Add if needed
+      };
+    },
+
+    // SubCategories - extract unique subcategories from Categories
+    async subCategories() {
+      try {
+        // Get all categories with subCategory field
+        const categories = await Category.find({ 
+          isActive: true,
+          subCategory: { $exists: true, $ne: null, $ne: '' }
+        }).lean();
+
+        // Create a map of unique subcategories
+        const subCategoryMap = new Map();
+        
+        categories.forEach((category) => {
+          if (category.subCategory) {
+            const key = `${category._id}_${category.subCategory}`;
+            if (!subCategoryMap.has(key)) {
+              subCategoryMap.set(key, {
+                _id: `${category._id}_${category.subCategory}`,
+                title: category.subCategory,
+                parentCategoryId: category._id.toString()
+              });
+            }
+          }
+        });
+
+        return Array.from(subCategoryMap.values());
+      } catch (error) {
+        console.error('Error fetching subCategories:', error);
+        return [];
+      }
+    },
+
+    // SubCategories by parent category ID
+    async subCategoriesByParentId(_, { parentCategoryId }) {
+      try {
+        const category = await Category.findById(parentCategoryId).lean();
+        if (!category || !category.subCategory) {
+          return [];
+        }
+
+        // Find all categories with the same subCategory value under this parent
+        const subCategories = await Category.find({
+          _id: parentCategoryId,
+          isActive: true,
+          subCategory: { $exists: true, $ne: null, $ne: '' }
+        }).lean();
+
+        return subCategories
+          .filter(cat => cat.subCategory)
+          .map(cat => ({
+            _id: `${cat._id}_${cat.subCategory}`,
+            title: cat.subCategory,
+            parentCategoryId: cat._id.toString()
+          }));
+      } catch (error) {
+        console.error('Error fetching subCategoriesByParentId:', error);
+        return [];
+      }
     }
   },
 
