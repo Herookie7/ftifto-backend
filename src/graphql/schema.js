@@ -136,6 +136,7 @@ const typeDefs = gql`
     orderPrefix: String
     name: String
     image: String
+    logo: String
     address: String
     location: Location
     deliveryTime: Int
@@ -331,7 +332,9 @@ const typeDefs = gql`
     topRatedVendors(latitude: Float!, longitude: Float!): [Restaurant]
     topRatedVendorsPreview(latitude: Float!, longitude: Float!): [RestaurantPreview]
     mostOrderedRestaurants: [Restaurant]
+    mostOrderedRestaurantsPreview(latitude: Float, longitude: Float): [RestaurantPreview]
     recentOrderRestaurants: [Restaurant]
+    recentOrderRestaurantsPreview(latitude: Float, longitude: Float): [RestaurantPreview]
 
     # Product/Food queries
     popularFoodItems(restaurantId: String!): [Food]

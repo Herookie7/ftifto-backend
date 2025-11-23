@@ -264,6 +264,42 @@ const resolvers = {
       return restaurants;
     },
 
+    // Most ordered restaurants preview
+    async mostOrderedRestaurantsPreview(_, { latitude, longitude }) {
+      const orders = await Order.aggregate([
+        { $match: { isActive: true } },
+        { $group: { _id: '$restaurant', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ]);
+
+      const restaurantIds = orders.map((o) => o._id);
+      const restaurants = await Restaurant.find({ _id: { $in: restaurantIds }, isActive: true, isAvailable: true })
+        .lean();
+
+      // Add review data
+      for (const restaurant of restaurants) {
+        const reviews = await Review.find({ restaurant: restaurant._id, isActive: true }).lean();
+        const ratings = reviews.reduce((sum, r) => sum + (r.rating || 0), 0);
+        restaurant.reviewCount = reviews.length;
+        restaurant.reviewAverage = reviews.length > 0 ? ratings / reviews.length : 0;
+      }
+
+      return restaurants.map((r) => ({
+        ...r,
+        distanceWithCurrentLocation: latitude && longitude && r.location?.coordinates
+          ? calculateDistance(
+              latitude,
+              longitude,
+              r.location.coordinates[1],
+              r.location.coordinates[0]
+            )
+          : null,
+        freeDelivery: r.minimumOrder === 0,
+        acceptVouchers: true
+      }));
+    },
+
     // Recent order restaurants
     async recentOrderRestaurants() {
       // This would typically filter by current user's recent orders
@@ -282,6 +318,38 @@ const resolvers = {
         .limit(10);
 
       return restaurants;
+    },
+
+    // Recent order restaurants preview
+    async recentOrderRestaurantsPreview(_, { latitude, longitude }) {
+      // This would typically filter by current user's recent orders
+      // For now, return recently active restaurants
+      const restaurants = await Restaurant.find({ isActive: true, isAvailable: true })
+        .lean()
+        .sort({ updatedAt: -1 })
+        .limit(10);
+
+      // Add review data
+      for (const restaurant of restaurants) {
+        const reviews = await Review.find({ restaurant: restaurant._id, isActive: true }).lean();
+        const ratings = reviews.reduce((sum, r) => sum + (r.rating || 0), 0);
+        restaurant.reviewCount = reviews.length;
+        restaurant.reviewAverage = reviews.length > 0 ? ratings / reviews.length : 0;
+      }
+
+      return restaurants.map((r) => ({
+        ...r,
+        distanceWithCurrentLocation: latitude && longitude && r.location?.coordinates
+          ? calculateDistance(
+              latitude,
+              longitude,
+              r.location.coordinates[1],
+              r.location.coordinates[0]
+            )
+          : null,
+        freeDelivery: r.minimumOrder === 0,
+        acceptVouchers: true
+      }));
     },
 
     // Popular food items for a restaurant
