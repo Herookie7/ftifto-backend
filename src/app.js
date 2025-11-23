@@ -222,54 +222,83 @@ app.get('/status', (req, res) => {
 app.use(maintenance);
 
 // GraphQL Apollo Server setup
-const apolloServer = new ApolloServer({
-  typeDefs,
-  resolvers,
-  persistedQueries: false,
-  cache: 'bounded',
-  context: async ({ req }) => {
-    const token = req.headers.authorization?.split(' ')[1] || null;
-    
-    if (!token) {
-      return { user: null };
-    }
+let apolloServer;
 
-    try {
-      const { verifyToken } = require('./utils/token');
-      const decoded = verifyToken(token);
-      const User = require('./models/User');
-      const user = await User.findById(decoded.id);
-      
-      return { user };
-    } catch (error) {
-      // Token is invalid or expired, return null user
-      logger.warn('Invalid token in GraphQL context', { error: error.message });
-      return { user: null };
-    }
-  },
-  formatError: (err) => {
-    logger.error('GraphQL Error', { error: err.message, stack: err.stack });
-    return {
-      message: err.message,
-      code: err.extensions?.code,
-      path: err.path
-    };
-  }
-});
-
-// Start Apollo Server and apply middleware
-(async () => {
+const initializeGraphQL = async () => {
   try {
+    apolloServer = new ApolloServer({
+      typeDefs,
+      resolvers,
+      persistedQueries: false,
+      cache: 'bounded',
+      context: async ({ req }) => {
+        const token = req.headers.authorization?.split(' ')[1] || null;
+        
+        if (!token) {
+          return { user: null };
+        }
+
+        try {
+          const { verifyToken } = require('./utils/token');
+          const decoded = verifyToken(token);
+          const User = require('./models/User');
+          const user = await User.findById(decoded.id);
+          
+          return { user };
+        } catch (error) {
+          // Token is invalid or expired, return null user
+          logger.warn('Invalid token in GraphQL context', { error: error.message });
+          return { user: null };
+        }
+      },
+      formatError: (err) => {
+        logger.error('GraphQL Error', { error: err.message, stack: err.stack });
+        return {
+          message: err.message,
+          code: err.extensions?.code,
+          path: err.path
+        };
+      }
+    });
+
     await apolloServer.start();
-    apolloServer.applyMiddleware({ app, path: '/graphql' });
+    apolloServer.applyMiddleware({ 
+      app, 
+      path: '/graphql',
+      cors: false // CORS is already handled by express cors middleware
+    });
     logger.info('GraphQL server started at /graphql');
     console.log('GraphQL server started at /graphql');
+    
+    // Add a simple test endpoint to verify GraphQL is working
+    app.get('/graphql/health', (req, res) => {
+      res.json({ 
+        status: 'ok', 
+        message: 'GraphQL server is running',
+        endpoint: '/graphql'
+      });
+    });
+    
+    return true;
   } catch (error) {
     logger.error('Failed to start GraphQL server', { error: error.message, stack: error.stack });
     console.error('Failed to start GraphQL server:', error.message, error.stack);
-    // Don't crash the app if GraphQL fails to start, but log the error
+    // Add a fallback route to provide helpful error message
+    app.get('/graphql', (req, res) => {
+      res.status(503).json({
+        status: 'error',
+        message: 'GraphQL server is not available. Check server logs for details.',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    });
+    return false;
   }
-})();
+};
+
+// Initialize GraphQL immediately (non-blocking but will complete)
+initializeGraphQL().catch((error) => {
+  logger.error('GraphQL initialization failed', { error: error.message, stack: error.stack });
+});
 
 app.use('/api', routes);
 
