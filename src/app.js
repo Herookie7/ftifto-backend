@@ -297,19 +297,6 @@ app.post('/graphql', (req, res, next) => {
   });
 });
 
-// Update health endpoint to show GraphQL status
-app.get('/graphql/health', (req, res) => {
-  res.json({ 
-    status: graphQLInitialized ? 'ok' : 'initializing',
-    message: graphQLInitialized 
-      ? 'GraphQL endpoint is available' 
-      : 'GraphQL endpoint is initializing',
-    endpoint: '/graphql',
-    initialized: graphQLInitialized,
-    note: 'Use POST method for GraphQL queries'
-  });
-});
-
 // Initialize GraphQL immediately (non-blocking but will complete)
 initializeGraphQL().catch((error) => {
   logger.error('GraphQL initialization failed', { error: error.message, stack: error.stack });
