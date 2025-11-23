@@ -22,9 +22,6 @@ const logger = require('./logger');
 const metrics = require('./metrics');
 const metricsRouter = require('./routes/metrics.routes');
 const Sentry = require('@sentry/node');
-const { ApolloServer } = require('apollo-server-express');
-const typeDefs = require('./graphql/schema');
-const resolvers = require('./graphql/resolvers');
 
 const docsRoute = config.docs.route || '/api/v1/docs';
 
@@ -222,10 +219,13 @@ app.get('/status', (req, res) => {
 app.use(maintenance);
 
 // GraphQL Apollo Server setup
-let apolloServer;
-let graphQLInitialized = false;
-let graphQLError = null;
+const { ApolloServer } = require('apollo-server-express');
+const typeDefs = require('./graphql/schema');
+const resolvers = require('./graphql/resolvers');
 
+let apolloServer = null;
+
+// Initialize GraphQL Server
 const initializeGraphQL = async () => {
   try {
     apolloServer = new ApolloServer({
@@ -248,7 +248,6 @@ const initializeGraphQL = async () => {
           
           return { user };
         } catch (error) {
-          // Token is invalid or expired, return null user
           logger.warn('Invalid token in GraphQL context', { error: error.message });
           return { user: null };
         }
@@ -265,98 +264,33 @@ const initializeGraphQL = async () => {
 
     await apolloServer.start();
     
-    // Apply Apollo Server middleware - this handles both GET and POST for /graphql
-    // Note: applyMiddleware must be called AFTER apolloServer.start()
+    // Apply Apollo Server middleware - handles both GET and POST for /graphql
     apolloServer.applyMiddleware({ 
       app, 
       path: '/graphql',
       cors: false // CORS is already handled by express cors middleware
     });
     
-    // Note: Explicit POST handler is registered above (before notFound middleware)
-    // This ensures the route exists even during initialization
-    
-    graphQLInitialized = true;
-    logger.info('GraphQL server started at /graphql');
-    console.log('GraphQL server started at /graphql');
-    console.log('Apollo Server middleware applied to /graphql');
-    console.log('Explicit GraphQL route handlers registered');
-    
-    // Verify route is registered by checking app._router
-    if (app._router) {
-      const routes = app._router.stack
-        .filter(layer => layer.route)
-        .map(layer => `${Object.keys(layer.route.methods).join(',').toUpperCase()} ${layer.route.path}`);
-      const graphqlRoutes = routes.filter(r => r.includes('/graphql'));
-      console.log('Registered GraphQL routes:', graphqlRoutes);
-      logger.info('GraphQL routes registered', { routes: graphqlRoutes });
-    }
+    logger.info('GraphQL server started successfully at /graphql');
+    console.log('✅ GraphQL server started at /graphql');
     
     return true;
   } catch (error) {
-    graphQLError = error;
     logger.error('Failed to start GraphQL server', { error: error.message, stack: error.stack });
-    console.error('Failed to start GraphQL server:', error.message, error.stack);
-    
-    // Add fallback route only if GraphQL fails to initialize
-    app.post('/graphql', (req, res) => {
-      res.status(503).json({
-        status: 'error',
-        message: 'GraphQL server failed to initialize. Check server logs for details.',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    });
-    
+    console.error('❌ Failed to start GraphQL server:', error.message);
     return false;
   }
 };
 
-// Add GraphQL health check route (before initialization)
+// GraphQL health check endpoint
 app.get('/graphql/health', (req, res) => {
   res.json({ 
-    status: graphQLInitialized ? 'ok' : 'initializing',
-    message: graphQLInitialized 
+    status: apolloServer ? 'ok' : 'initializing',
+    message: apolloServer 
       ? 'GraphQL endpoint is available' 
       : 'GraphQL endpoint is initializing',
-    endpoint: '/graphql',
-    initialized: graphQLInitialized,
-    note: 'Use POST method for GraphQL queries'
+    endpoint: '/graphql'
   });
-});
-
-// Register GraphQL route placeholder BEFORE notFound middleware
-// This ensures the route exists even if GraphQL hasn't initialized yet
-app.post('/graphql', async (req, res, next) => {
-  if (!graphQLInitialized || !apolloServer) {
-    return res.status(503).json({ 
-      error: 'GraphQL server is initializing. Please try again in a moment.',
-      initialized: graphQLInitialized
-    });
-  }
-  // If GraphQL is initialized, the handler in initializeGraphQL will handle it
-  // But we need to forward to it
-  try {
-    const context = await apolloServer.context({ req, res });
-    const result = await apolloServer.executeOperation({
-      query: req.body.query,
-      variables: req.body.variables,
-      operationName: req.body.operationName,
-      context
-    });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-});
-
-// Export initializeGraphQL for server.js to call before starting server
-// This ensures GraphQL is ready before requests come in
-module.exports.initializeGraphQL = initializeGraphQL;
-
-// Also initialize immediately (for cases where server.js doesn't wait)
-// This is a fallback, but server.js should wait for it
-initializeGraphQL().catch((error) => {
-  logger.error('GraphQL initialization failed', { error: error.message, stack: error.stack });
 });
 
 app.use('/api', routes);
@@ -384,7 +318,7 @@ if (config.sentry?.dsn) {
 
 app.use(errorHandler);
 
-// Export both app and initializeGraphQL
+// Export app and initializeGraphQL
 module.exports = app;
 module.exports.initializeGraphQL = initializeGraphQL;
 
