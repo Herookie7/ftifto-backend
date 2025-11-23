@@ -265,7 +265,7 @@ const initializeGraphQL = async () => {
 
     await apolloServer.start();
     
-    // Apply Apollo Server middleware
+    // Apply Apollo Server middleware - this handles both GET and POST for /graphql
     apolloServer.applyMiddleware({ 
       app, 
       path: '/graphql',
