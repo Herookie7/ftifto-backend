@@ -264,15 +264,28 @@ const initializeGraphQL = async () => {
     });
 
     await apolloServer.start();
+    
+    // Apply Apollo Server middleware
     apolloServer.applyMiddleware({ 
       app, 
       path: '/graphql',
       cors: false // CORS is already handled by express cors middleware
     });
+    
     graphQLInitialized = true;
     logger.info('GraphQL server started at /graphql');
     console.log('GraphQL server started at /graphql');
     console.log('Apollo Server middleware applied to /graphql');
+    
+    // Verify route is registered by checking app._router
+    if (app._router) {
+      const routes = app._router.stack
+        .filter(layer => layer.route)
+        .map(layer => `${Object.keys(layer.route.methods).join(',').toUpperCase()} ${layer.route.path}`);
+      const graphqlRoutes = routes.filter(r => r.includes('/graphql'));
+      console.log('Registered GraphQL routes:', graphqlRoutes);
+      logger.info('GraphQL routes registered', { routes: graphqlRoutes });
+    }
     
     return true;
   } catch (error) {
