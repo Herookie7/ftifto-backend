@@ -273,25 +273,8 @@ const initializeGraphQL = async () => {
       cors: false // CORS is already handled by express cors middleware
     });
     
-    // Explicitly register GraphQL POST route as fallback
-    // Apollo Server Express v3's applyMiddleware should work, but this ensures the route exists
-    app.post('/graphql', async (req, res, next) => {
-      if (!apolloServer) {
-        return res.status(503).json({ error: 'GraphQL server not initialized' });
-      }
-      try {
-        const context = await apolloServer.context({ req, res });
-        const result = await apolloServer.executeOperation({
-          query: req.body.query,
-          variables: req.body.variables,
-          operationName: req.body.operationName,
-          context
-        });
-        return res.json(result);
-      } catch (error) {
-        return next(error);
-      }
-    });
+    // Note: Explicit POST handler is registered above (before notFound middleware)
+    // This ensures the route exists even during initialization
     
     graphQLInitialized = true;
     logger.info('GraphQL server started at /graphql');
@@ -339,6 +322,31 @@ app.get('/graphql/health', (req, res) => {
     initialized: graphQLInitialized,
     note: 'Use POST method for GraphQL queries'
   });
+});
+
+// Register GraphQL route placeholder BEFORE notFound middleware
+// This ensures the route exists even if GraphQL hasn't initialized yet
+app.post('/graphql', async (req, res, next) => {
+  if (!graphQLInitialized || !apolloServer) {
+    return res.status(503).json({ 
+      error: 'GraphQL server is initializing. Please try again in a moment.',
+      initialized: graphQLInitialized
+    });
+  }
+  // If GraphQL is initialized, the handler in initializeGraphQL will handle it
+  // But we need to forward to it
+  try {
+    const context = await apolloServer.context({ req, res });
+    const result = await apolloServer.executeOperation({
+      query: req.body.query,
+      variables: req.body.variables,
+      operationName: req.body.operationName,
+      context
+    });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 // Export initializeGraphQL for server.js to call before starting server
