@@ -272,30 +272,26 @@ const initializeGraphQL = async () => {
     graphQLInitialized = true;
     logger.info('GraphQL server started at /graphql');
     console.log('GraphQL server started at /graphql');
+    console.log('Apollo Server middleware applied to /graphql');
     
     return true;
   } catch (error) {
     graphQLError = error;
     logger.error('Failed to start GraphQL server', { error: error.message, stack: error.stack });
     console.error('Failed to start GraphQL server:', error.message, error.stack);
+    
+    // Add fallback route only if GraphQL fails to initialize
+    app.post('/graphql', (req, res) => {
+      res.status(503).json({
+        status: 'error',
+        message: 'GraphQL server failed to initialize. Check server logs for details.',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    });
+    
     return false;
   }
 };
-
-// Add fallback routes for GraphQL if initialization fails or is delayed
-app.post('/graphql', (req, res, next) => {
-  if (graphQLInitialized) {
-    return next(); // Let Apollo Server handle it
-  }
-  // GraphQL not ready yet
-  res.status(503).json({
-    status: 'error',
-    message: graphQLError 
-      ? 'GraphQL server failed to initialize. Check server logs for details.'
-      : 'GraphQL server is initializing. Please try again in a moment.',
-    error: process.env.NODE_ENV === 'development' && graphQLError ? graphQLError.message : undefined
-  });
-});
 
 // Initialize GraphQL immediately (non-blocking but will complete)
 initializeGraphQL().catch((error) => {
