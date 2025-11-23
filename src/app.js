@@ -306,12 +306,7 @@ const initializeGraphQL = async () => {
   }
 };
 
-// Initialize GraphQL immediately (non-blocking but will complete)
-initializeGraphQL().catch((error) => {
-  logger.error('GraphQL initialization failed', { error: error.message, stack: error.stack });
-});
-
-// Add GraphQL health check route (after initialization function is defined)
+// Add GraphQL health check route (before initialization)
 app.get('/graphql/health', (req, res) => {
   res.json({ 
     status: graphQLInitialized ? 'ok' : 'initializing',
@@ -322,6 +317,16 @@ app.get('/graphql/health', (req, res) => {
     initialized: graphQLInitialized,
     note: 'Use POST method for GraphQL queries'
   });
+});
+
+// Export initializeGraphQL for server.js to call before starting server
+// This ensures GraphQL is ready before requests come in
+module.exports.initializeGraphQL = initializeGraphQL;
+
+// Also initialize immediately (for cases where server.js doesn't wait)
+// This is a fallback, but server.js should wait for it
+initializeGraphQL().catch((error) => {
+  logger.error('GraphQL initialization failed', { error: error.message, stack: error.stack });
 });
 
 app.use('/api', routes);

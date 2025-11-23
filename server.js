@@ -19,7 +19,17 @@ const secretsProvider = require('./src/config/secretsProvider');
 const startServer = async () => {
   const server = http.createServer(app);
   
-  // Start server listening FIRST so Render can detect the port
+  // Wait for GraphQL to initialize before starting server
+  // This ensures Apollo Server middleware is registered before requests come in
+  const { initializeGraphQL } = require('./src/app');
+  try {
+    await initializeGraphQL();
+    logger.info('GraphQL initialized before server start');
+  } catch (error) {
+    logger.warn('GraphQL initialization failed, but continuing server start', { error: error.message });
+  }
+  
+  // Start server listening
   const PORT = process.env.PORT || 8001;
   
   server.listen(PORT, '0.0.0.0', () => {
