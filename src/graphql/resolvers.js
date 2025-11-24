@@ -9,6 +9,7 @@ const User = require('../models/User');
 const Offer = require('../models/Offer');
 const Section = require('../models/Section');
 const Zone = require('../models/Zone');
+const Banner = require('../models/Banner');
 
 const resolvers = {
   Query: {
@@ -544,6 +545,13 @@ const resolvers = {
     // Zones query
     async zones() {
       return await Zone.find({ isActive: true }).lean();
+    },
+
+    // Banners query
+    async banners() {
+      return await Banner.find({ isActive: true })
+        .sort({ order: 1, createdAt: -1 })
+        .lean();
     },
 
     // Get app versions

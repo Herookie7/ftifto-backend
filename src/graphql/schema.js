@@ -324,6 +324,20 @@ const typeDefs = gql`
     restaurantAppVersion: String
   }
 
+  type Banner {
+    _id: ID
+    title: String
+    description: String
+    action: String
+    screen: String
+    file: String
+    parameters: String
+    isActive: Boolean
+    order: Int
+    createdAt: Date
+    updatedAt: Date
+  }
+
   type Query {
     # Restaurant queries
     nearByRestaurants(latitude: Float, longitude: Float, shopType: String): RestaurantListResponse
@@ -357,6 +371,7 @@ const typeDefs = gql`
     subCategories: [SubCategory]
     subCategoriesByParentId(parentCategoryId: String!): [SubCategory]
     getVersions: Versions
+    banners: [Banner]
   }
 
   type Mutation {
