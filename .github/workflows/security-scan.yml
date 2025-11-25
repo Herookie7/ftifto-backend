@@ -29,6 +29,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify package-lock.json exists
+        working-directory: .
         run: |
           if [ ! -f "ftifto-backend/package-lock.json" ]; then
             echo "Error: package-lock.json not found at ftifto-backend/package-lock.json"
