@@ -28,6 +28,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Verify package-lock.json exists
+        run: |
+          if [ ! -f "ftifto-backend/package-lock.json" ]; then
+            echo "Error: package-lock.json not found at ftifto-backend/package-lock.json"
+            ls -la ftifto-backend/ | head -20
+            exit 1
+          fi
+          echo "✓ package-lock.json found"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
