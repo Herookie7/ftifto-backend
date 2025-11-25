@@ -22,18 +22,15 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: 'ftifto-backend/package-lock.json'
+          cache-dependency-path: 'package-lock.json'
 
       - name: Install dependencies
-        working-directory: ftifto-backend
         run: npm ci
 
       - name: Run tests
-        working-directory: ftifto-backend
         run: npm test
 
       - name: Run security audit
-        working-directory: ftifto-backend
         run: npm run audit
 
       - name: Validate deployment secrets
@@ -53,7 +50,6 @@ jobs:
 
       - name: Determine package version
         id: pkg
-        working-directory: ftifto-backend
         run: echo "version=$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
 
       - name: Create semantic version tag
@@ -86,7 +82,6 @@ jobs:
             }
 
       - name: Build Docker image
-        working-directory: ftifto-backend
         run: docker build -t tifto/ftifto-backend:${{ github.sha }} .
 
       - name: Deploy to Render/Railway
@@ -125,7 +120,6 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           DEFAULT_API_URL: https://ftifto-backend.onrender.com/api
-        working-directory: ftifto-backend
         run: |
           API_URL=${DEPLOY_API_URL:-$DEFAULT_API_URL}
           echo "Running load test against ${API_URL}/v1/health"

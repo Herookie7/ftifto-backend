@@ -11,9 +11,6 @@ permissions:
 jobs:
   rollup:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ftifto-backend
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -27,7 +24,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: 'ftifto-backend/package-lock.json'
+          cache-dependency-path: 'package-lock.json'
 
       - name: Install dependencies
         run: npm ci --omit=dev
@@ -43,6 +40,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: audit-rollup-summary
-          path: ftifto-backend/audit-rollup-summary.json
+          path: audit-rollup-summary.json
           retention-days: 30
 
