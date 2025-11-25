@@ -143,34 +143,47 @@ const resolvers = {
 
     // Single restaurant by ID
     async restaurant(_, { id }) {
-      const restaurant = await Restaurant.findById(id)
-        .populate('owner')
-        .populate({
-          path: 'categories',
-          populate: {
-            path: 'foods',
-            model: 'Product'
-          }
-        })
-        .populate('zone')
-        .lean();
+      if (!id) {
+        console.error('Restaurant query called without id parameter');
+        return null;
+      }
 
-      if (!restaurant) return null;
+      try {
+        const restaurant = await Restaurant.findById(id)
+          .populate('owner')
+          .populate({
+            path: 'categories',
+            populate: {
+              path: 'foods',
+              model: 'Product'
+            }
+          })
+          .populate('zone')
+          .lean();
 
-      // Get review data
-      const reviews = await Review.find({ restaurant: restaurant._id, isActive: true })
-        .populate('order')
-        .populate('user')
-        .lean();
-      const ratings = reviews.reduce((sum, r) => sum + (r.rating || 0), 0);
-      restaurant.reviewData = {
-        reviews: reviews.slice(0, 10),
-        ratings: reviews.length > 0 ? ratings / reviews.length : 0,
-        total: reviews.length
-      };
-      restaurant.reviewCount = reviews.length;
+        if (!restaurant) {
+          console.warn(`Restaurant not found with id: ${id}`);
+          return null;
+        }
 
-      return restaurant;
+        // Get review data
+        const reviews = await Review.find({ restaurant: restaurant._id, isActive: true })
+          .populate('order')
+          .populate('user')
+          .lean();
+        const ratings = reviews.reduce((sum, r) => sum + (r.rating || 0), 0);
+        restaurant.reviewData = {
+          reviews: reviews.slice(0, 10),
+          ratings: reviews.length > 0 ? ratings / reviews.length : 0,
+          total: reviews.length
+        };
+        restaurant.reviewCount = reviews.length;
+
+        return restaurant;
+      } catch (error) {
+        console.error(`Error fetching restaurant with id ${id}:`, error);
+        throw error;
+      }
     },
 
     // Top rated vendors
@@ -544,7 +557,14 @@ const resolvers = {
 
     // Zones query
     async zones() {
-      return await Zone.find({ isActive: true }).lean();
+      try {
+        const zones = await Zone.find({ isActive: true }).lean();
+        console.log(`Zones resolver: Found ${zones.length} active zones`);
+        return zones;
+      } catch (error) {
+        console.error('Zones resolver error:', error);
+        throw new Error(`Failed to fetch zones: ${error.message}`);
+      }
     },
 
     // Banners query
