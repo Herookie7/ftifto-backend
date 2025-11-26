@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 const configurationSchema = new mongoose.Schema(
   {
-    currency: { type: String, default: 'USD' },
-    currencySymbol: { type: String, default: '$' },
+    currency: { type: String, default: 'INR' },
+    currencySymbol: { type: String, default: '₹' },
     deliveryRate: { type: Number, default: 0 },
     androidClientID: { type: String, trim: true },
     iOSClientID: { type: String, trim: true },
