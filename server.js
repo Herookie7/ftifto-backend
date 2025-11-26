@@ -19,19 +19,20 @@ const secretsProvider = require('./src/config/secretsProvider');
 const startServer = async () => {
   const server = http.createServer(app);
   
-  // Wait for GraphQL to initialize before starting server
-  // This ensures Apollo Server middleware is registered before requests come in
+  // Start server listening first (but don't accept connections until ready)
+  const PORT = process.env.PORT || 8001;
+  
+  // Wait for GraphQL to initialize after server is created (so we can pass it for subscriptions)
+  // This ensures Apollo Server middleware is registered and subscriptions are configured
   const { initializeGraphQL } = require('./src/app');
   try {
-    await initializeGraphQL();
-    logger.info('GraphQL initialized before server start');
+    await initializeGraphQL(server);
+    logger.info('GraphQL initialized with WebSocket subscriptions support');
   } catch (error) {
     logger.warn('GraphQL initialization failed, but continuing server start', { error: error.message });
   }
   
-  // Start server listening
-  const PORT = process.env.PORT || 8001;
-  
+  // Now start accepting connections
   server.listen(PORT, '0.0.0.0', () => {
     logger.info(`🚀 Server running on port ${PORT}`);
     console.log(`🚀 Server running on port ${PORT}`);

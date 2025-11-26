@@ -226,15 +226,35 @@ const resolvers = require('./graphql/resolvers');
 let apolloServer = null;
 
 // Initialize GraphQL Server
-const initializeGraphQL = async () => {
+const initializeGraphQL = async (server) => {
   try {
     apolloServer = new ApolloServer({
       typeDefs,
       resolvers,
       persistedQueries: false,
       cache: 'bounded',
-      context: async ({ req }) => {
-        const token = req.headers.authorization?.split(' ')[1] || null;
+      context: async ({ req, connection }) => {
+        // Handle subscriptions (connection context) vs queries/mutations (req context)
+        if (connection) {
+          // Subscription context
+          const token = connection.context?.authorization?.split(' ')[1] || null;
+          if (!token) {
+            return { user: null };
+          }
+          try {
+            const { verifyToken } = require('./utils/token');
+            const decoded = verifyToken(token);
+            const User = require('./models/User');
+            const user = await User.findById(decoded.id);
+            return { user };
+          } catch (error) {
+            logger.warn('Invalid token in subscription context', { error: error.message });
+            return { user: null };
+          }
+        }
+        
+        // Query/Mutation context
+        const token = req?.headers?.authorization?.split(' ')[1] || null;
         
         if (!token) {
           return { user: null };
@@ -270,6 +290,55 @@ const initializeGraphQL = async () => {
       path: '/graphql',
       cors: false // CORS is already handled by express cors middleware
     });
+    
+    // Install WebSocket subscription handlers if server is provided
+    if (server) {
+      const { SubscriptionServer } = require('subscriptions-transport-ws');
+      const { execute, subscribe } = require('graphql');
+      const { makeExecutableSchema } = require('@graphql-tools/schema');
+      
+      const schema = makeExecutableSchema({
+        typeDefs,
+        resolvers
+      });
+      
+      const subscriptionServer = SubscriptionServer.create(
+        {
+          schema,
+          execute,
+          subscribe,
+          onConnect: async (connectionParams, websocket) => {
+            // Extract token from connection params
+            const token = connectionParams?.authorization?.split(' ')[1] || 
+                         connectionParams?.Authorization?.split(' ')[1] || null;
+            
+            let user = null;
+            if (token) {
+              try {
+                const { verifyToken } = require('./utils/token');
+                const decoded = verifyToken(token);
+                const User = require('./models/User');
+                user = await User.findById(decoded.id);
+              } catch (error) {
+                logger.warn('Invalid token in WebSocket connection', { error: error.message });
+              }
+            }
+            
+            return { user, authorization: connectionParams?.authorization || connectionParams?.Authorization };
+          },
+          onDisconnect: () => {
+            logger.info('GraphQL subscription client disconnected');
+          }
+        },
+        {
+          server,
+          path: '/graphql'
+        }
+      );
+      
+      logger.info('GraphQL WebSocket subscriptions enabled at /graphql');
+      console.log('✅ GraphQL WebSocket subscriptions enabled');
+    }
     
     logger.info('GraphQL server started successfully at /graphql');
     console.log('✅ GraphQL server started at /graphql');

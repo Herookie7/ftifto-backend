@@ -30,7 +30,8 @@
     "compliance": "node scripts/auditSecrets.js",
     "scale:check": "node scripts/scaleCheck.js",
     "dr:run": "node scripts/disasterRecovery.js",
-    "audit:rollup": "node scripts/rollupAuditLogs.js"
+    "audit:rollup": "node scripts/rollupAuditLogs.js",
+    "add:cities": "node scripts/addCities.js"
   },
   "keywords": [
     "express",
@@ -83,7 +84,8 @@
     "apollo-server-express": "^3.12.1",
     "graphql": "^16.8.1",
     "graphql-tag": "^2.12.6",
-    "subscriptions-transport-ws": "^0.11.0"
+    "subscriptions-transport-ws": "^0.11.0",
+    "@graphql-tools/schema": "^10.0.0"
   },
   "devDependencies": {
     "artillery": "^2.0.1",
