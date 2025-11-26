@@ -15,7 +15,10 @@ const configurationSchema = new mongoose.Schema(
     skipMobileVerification: { type: Boolean, default: false },
     skipEmailVerification: { type: Boolean, default: false },
     costType: { type: String, default: 'fixed' },
-    customerAppVersion: { type: String, trim: true }
+    customerAppVersion: { type: String, trim: true },
+    twilioEnabled: { type: Boolean, default: false },
+    appAmplitudeApiKey: { type: String, trim: true },
+    customerAppSentryUrl: { type: String, trim: true }
   },
   { timestamps: true }
 );

@@ -10,6 +10,12 @@ const Offer = require('../models/Offer');
 const Section = require('../models/Section');
 const Zone = require('../models/Zone');
 const Banner = require('../models/Banner');
+const { signToken } = require('../utils/token');
+const config = require('../config');
+const generateOrderId = require('../utils/generateOrderId');
+const { emitOrderUpdate } = require('../realtime/emitter');
+const auditLogger = require('../services/auditLogger');
+const { registerSubscription } = require('./subscriptionBridge');
 
 const resolvers = {
   Query: {
@@ -314,11 +320,33 @@ const resolvers = {
       }));
     },
 
-    // Recent order restaurants
-    async recentOrderRestaurants() {
-      // This would typically filter by current user's recent orders
-      // For now, return recently active restaurants
-      const restaurants = await Restaurant.find({ isActive: true, isAvailable: true })
+    // Recent order restaurants - filtered by authenticated user
+    async recentOrderRestaurants(_, __, context) {
+      if (!context.user) {
+        return [];
+      }
+
+      // Get user's recent orders
+      const recentOrders = await Order.find({ 
+        customer: context.user._id, 
+        isActive: true 
+      })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .select('restaurant')
+        .lean();
+
+      const restaurantIds = [...new Set(recentOrders.map(o => o.restaurant?.toString()).filter(Boolean))];
+      
+      if (restaurantIds.length === 0) {
+        return [];
+      }
+
+      const restaurants = await Restaurant.find({ 
+        _id: { $in: restaurantIds }, 
+        isActive: true, 
+        isAvailable: true 
+      })
         .populate('owner')
         .populate({
           path: 'categories',
@@ -327,21 +355,39 @@ const resolvers = {
             model: 'Product'
           }
         })
-        .lean()
-        .sort({ updatedAt: -1 })
-        .limit(10);
+        .lean();
 
       return restaurants;
     },
 
-    // Recent order restaurants preview
-    async recentOrderRestaurantsPreview(_, { latitude, longitude }) {
-      // This would typically filter by current user's recent orders
-      // For now, return recently active restaurants
-      const restaurants = await Restaurant.find({ isActive: true, isAvailable: true })
-        .lean()
-        .sort({ updatedAt: -1 })
-        .limit(10);
+    // Recent order restaurants preview - filtered by authenticated user
+    async recentOrderRestaurantsPreview(_, { latitude, longitude }, context) {
+      if (!context.user) {
+        return [];
+      }
+
+      // Get user's recent orders
+      const recentOrders = await Order.find({ 
+        customer: context.user._id, 
+        isActive: true 
+      })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .select('restaurant')
+        .lean();
+
+      const restaurantIds = [...new Set(recentOrders.map(o => o.restaurant?.toString()).filter(Boolean))];
+      
+      if (restaurantIds.length === 0) {
+        return [];
+      }
+
+      const restaurants = await Restaurant.find({ 
+        _id: { $in: restaurantIds }, 
+        isActive: true, 
+        isAvailable: true 
+      })
+        .lean();
 
       // Add review data
       for (const restaurant of restaurants) {
@@ -672,11 +718,82 @@ const resolvers = {
         console.error('Error fetching subCategoriesByParentId:', error);
         return [];
       }
+    },
+
+    // Profile query - get current authenticated user
+    async profile(_, __, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id)
+        .populate('favourite')
+        .lean();
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Map addressBook to addresses for GraphQL
+      return {
+        ...user,
+        addresses: (user.addressBook || []).map(addr => ({
+          _id: addr._id,
+          deliveryAddress: addr.deliveryAddress,
+          details: addr.details,
+          label: addr.label,
+          selected: addr.selected || false,
+          location: addr.location || null
+        })),
+        favourite: (user.favourite || []).map(fav => fav._id?.toString() || fav.toString())
+      };
+    },
+
+    // Get country by ISO code - placeholder implementation
+    async getCountryByIso(_, { iso }) {
+      // This is a placeholder - implement actual country/city lookup if needed
+      // For now, return empty cities array
+      return {
+        cities: []
+      };
     }
   },
 
   Order: {
-    user: (parent) => parent.customer
+    user: (parent) => {
+      // Map customer field to user for GraphQL
+      if (parent.customer) {
+        return parent.customer;
+      }
+      return parent.user;
+    }
+  },
+
+  User: {
+    addresses: (parent) => {
+      // Map addressBook to addresses
+      if (parent.addressBook) {
+        return parent.addressBook.map(addr => ({
+          _id: addr._id,
+          deliveryAddress: addr.deliveryAddress,
+          details: addr.details,
+          label: addr.label,
+          selected: addr.selected || false,
+          location: addr.location || null
+        }));
+      }
+      return parent.addresses || [];
+    },
+    favourite: (parent) => {
+      // Ensure favourite returns array of strings (restaurant IDs)
+      if (!parent.favourite) return [];
+      return parent.favourite.map(fav => {
+        if (typeof fav === 'object' && fav._id) {
+          return fav._id.toString();
+        }
+        return fav.toString();
+      });
+    }
   },
 
   Mutation: {
@@ -797,10 +914,696 @@ const resolvers = {
 
     // Set app versions
     async setVersions(_, { customerAppVersion }) {
-      const config = await Configuration.getConfiguration();
-      config.customerAppVersion = customerAppVersion;
-      await config.save();
+      const configDoc = await Configuration.getConfiguration();
+      configDoc.customerAppVersion = customerAppVersion;
+      await configDoc.save();
       return 'success';
+    },
+
+    // Authentication Mutations
+    async login(_, { email, password, type, appleId, name, notificationToken }, context) {
+      let user;
+
+      // Handle Apple Sign In
+      if (type === 'apple' && appleId) {
+        user = await User.findOne({ 
+          $or: [{ email: email || null }, { userType: 'apple', metadata: { appleId } }]
+        });
+        
+        if (!user) {
+          // Create new user for Apple Sign In
+          user = await User.create({
+            name: name || 'User',
+            email: email,
+            userType: 'apple',
+            phoneIsVerified: true,
+            emailIsVerified: !!email,
+            password: require('crypto').randomBytes(32).toString('hex'), // Random password for Apple users
+            metadata: { appleId }
+          });
+        }
+      } else {
+        // Regular login with email/password
+        if (!email || !password) {
+          throw new Error('Email and password are required');
+        }
+
+        user = await User.findOne({
+          $or: [{ email }, { phone: email }]
+        }).select('+password');
+
+        if (!user) {
+          throw new Error('Invalid credentials');
+        }
+
+        const isMatch = await user.matchPassword(password);
+        if (!isMatch) {
+          throw new Error('Invalid credentials');
+        }
+      }
+
+      if (user.isActive === false) {
+        throw new Error('Account is deactivated');
+      }
+
+      // Update notification token if provided
+      if (notificationToken) {
+        if (!user.pushTokens) {
+          user.pushTokens = [];
+        }
+        if (!user.pushTokens.includes(notificationToken)) {
+          user.pushTokens.push(notificationToken);
+        }
+        user.notificationToken = notificationToken;
+        await user.save();
+      }
+
+      const token = signToken({ id: user._id, role: user.role });
+      const tokenExpiration = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+
+      return {
+        userId: user._id.toString(),
+        token,
+        tokenExpiration,
+        isActive: user.isActive,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        isNewUser: false // Could be enhanced to detect new users
+      };
+    },
+
+    async createUser(_, { userInput }) {
+      const { phone, email, password, name, notificationToken, appleId, emailIsVerified, isPhoneExists } = userInput;
+
+      // Check if user exists
+      const existingUser = await User.findOne({
+        $or: [{ email: email || null }, { phone: phone || null }]
+      });
+
+      if (existingUser) {
+        throw new Error('User with provided email or phone already exists');
+      }
+
+      const user = await User.create({
+        name,
+        email,
+        phone,
+        password: password || require('crypto').randomBytes(32).toString('hex'),
+        userType: appleId ? 'apple' : (email ? 'email' : 'phone'),
+        phoneIsVerified: isPhoneExists || false,
+        emailIsVerified: emailIsVerified || false,
+        notificationToken,
+        metadata: appleId ? { appleId } : undefined
+      });
+
+      const token = signToken({ id: user._id, role: user.role });
+      const tokenExpiration = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      auditLogger.logEvent({
+        category: 'auth',
+        action: 'register',
+        userId: user._id.toString(),
+        metadata: { role: user.role }
+      });
+
+      return {
+        userId: user._id.toString(),
+        token,
+        tokenExpiration,
+        name: user.name,
+        email: user.email,
+        phone: user.phone
+      };
+    },
+
+    async verifyOtp(_, { otp, email, phone }) {
+      // Get test OTP from configuration
+      const configDoc = await Configuration.getConfiguration();
+      const testOtp = configDoc.testOtp || '123456';
+
+      // For now, use test OTP if configured, otherwise validate
+      if (testOtp && otp === testOtp) {
+        // Update user verification status
+        if (email) {
+          await User.findOneAndUpdate({ email }, { emailIsVerified: true });
+        } else if (phone) {
+          await User.findOneAndUpdate({ phone }, { phoneIsVerified: true });
+        }
+        return { result: 'success' };
+      }
+
+      // In production, implement proper OTP verification
+      throw new Error('Invalid OTP');
+    },
+
+    async sendOtpToEmail(_, { email }) {
+      // Get test OTP from configuration
+      const configDoc = await Configuration.getConfiguration();
+      const testOtp = configDoc.testOtp || '123456';
+
+      // In production, send actual OTP via email service
+      // For now, return success (OTP would be sent via email service)
+      return { result: 'success' };
+    },
+
+    async sendOtpToPhoneNumber(_, { phone }) {
+      // Get test OTP from configuration
+      const configDoc = await Configuration.getConfiguration();
+      const testOtp = configDoc.testOtp || '123456';
+
+      // In production, send actual OTP via SMS service
+      // For now, return success (OTP would be sent via SMS service)
+      return { result: 'success' };
+    },
+
+    // User Management Mutations
+    async emailExist(_, { email }) {
+      const user = await User.findOne({ email }).lean();
+      if (user) {
+        return {
+          userType: user.userType || 'email',
+          _id: user._id.toString(),
+          email: user.email
+        };
+      }
+      return {
+        userType: null,
+        _id: null,
+        email: null
+      };
+    },
+
+    async phoneExist(_, { phone }) {
+      const user = await User.findOne({ phone }).lean();
+      if (user) {
+        return {
+          userType: user.userType || 'phone',
+          _id: user._id.toString(),
+          phone: user.phone
+        };
+      }
+      return {
+        userType: null,
+        _id: null,
+        phone: null
+      };
+    },
+
+    async changePassword(_, { oldPassword, newPassword }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id).select('+password');
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      const isMatch = await user.matchPassword(oldPassword);
+      if (!isMatch) {
+        throw new Error('Current password is incorrect');
+      }
+
+      user.password = newPassword;
+      await user.save();
+
+      auditLogger.logEvent({
+        category: 'auth',
+        action: 'password_change',
+        userId: user._id.toString()
+      });
+
+      return 'success';
+    },
+
+    async updateNotificationStatus(_, { offerNotification, orderNotification }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      user.isOfferNotification = offerNotification;
+      user.isOrderNotification = orderNotification;
+      await user.save();
+
+      return await User.findById(user._id).lean();
+    },
+
+    async Deactivate(_, { isActive, email }) {
+      const user = await User.findOne({ email });
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      user.isActive = isActive;
+      await user.save();
+
+      auditLogger.logEvent({
+        category: 'user',
+        action: 'deactivate',
+        userId: user._id.toString(),
+        metadata: { isActive }
+      });
+
+      return await User.findById(user._id).lean();
+    },
+
+    async pushToken(_, { token }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (!user.pushTokens) {
+        user.pushTokens = [];
+      }
+      if (!user.pushTokens.includes(token)) {
+        user.pushTokens.push(token);
+      }
+      user.notificationToken = token;
+      await user.save();
+
+      return await User.findById(user._id).lean();
+    },
+
+    // Address Mutations
+    async createAddress(_, { addressInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (!user.addressBook) {
+        user.addressBook = [];
+      }
+
+      user.addressBook.push({
+        ...addressInput,
+        selected: addressInput.selected || false
+      });
+      await user.save();
+
+      return await User.findById(user._id)
+        .populate('favourite')
+        .lean();
+    },
+
+    async editAddress(_, { addressInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (!user.addressBook || user.addressBook.length === 0) {
+        throw new Error('Address not found');
+      }
+
+      const addressIndex = user.addressBook.findIndex(
+        addr => addr._id?.toString() === addressInput._id?.toString()
+      );
+
+      if (addressIndex === -1) {
+        throw new Error('Address not found');
+      }
+
+      user.addressBook[addressIndex] = {
+        ...user.addressBook[addressIndex].toObject(),
+        ...addressInput
+      };
+      await user.save();
+
+      return await User.findById(user._id)
+        .populate('favourite')
+        .lean();
+    },
+
+    async deleteAddress(_, { id }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (!user.addressBook) {
+        throw new Error('Address not found');
+      }
+
+      user.addressBook = user.addressBook.filter(
+        addr => addr._id?.toString() !== id.toString()
+      );
+      await user.save();
+
+      return await User.findById(user._id)
+        .populate('favourite')
+        .lean();
+    },
+
+    async deleteBulkAddresses(_, { ids }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (!user.addressBook) {
+        return await User.findById(user._id)
+          .populate('favourite')
+          .lean();
+      }
+
+      const idStrings = ids.map(id => id.toString());
+      user.addressBook = user.addressBook.filter(
+        addr => !idStrings.includes(addr._id?.toString())
+      );
+      await user.save();
+
+      return await User.findById(user._id)
+        .populate('favourite')
+        .lean();
+    },
+
+    // Order Mutations
+    async placeOrder(_, { restaurant, orderInput, paymentMethod, couponCode, tipping, taxationAmount, address, orderDate, isPickedUp, deliveryCharges, instructions }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurantDoc = await Restaurant.findById(restaurant);
+      if (!restaurantDoc) {
+        throw new Error('Restaurant not found');
+      }
+
+      const customer = await User.findById(context.user._id);
+      if (!customer) {
+        throw new Error('Customer not found');
+      }
+
+      // Calculate order amount from items
+      let orderAmount = 0;
+      const items = orderInput.map(item => {
+        const itemPrice = item.variation?.price || 0;
+        const addonPrice = (item.addons || []).reduce((sum, addon) => {
+          const optionPrice = (addon.options || []).reduce((optSum, opt) => optSum + (opt.price || 0), 0);
+          return sum + optionPrice;
+        }, 0);
+        const itemTotal = (itemPrice + addonPrice) * item.quantity;
+        orderAmount += itemTotal;
+
+        return {
+          title: item.title,
+          food: item.food,
+          description: item.description,
+          image: item.image,
+          quantity: item.quantity,
+          variation: item.variation ? {
+            _id: item.variation._id,
+            title: item.variation.title,
+            price: item.variation.price,
+            discounted: item.variation.discounted,
+            addons: item.variation.addons || []
+          } : undefined,
+          addons: item.addons || [],
+          specialInstructions: item.specialInstructions
+        };
+      });
+
+      orderAmount += (deliveryCharges || 0) + (tipping || 0) + (taxationAmount || 0);
+
+      const order = await Order.create({
+        restaurant,
+        customer: context.user._id,
+        seller: restaurantDoc.owner,
+        items,
+        orderAmount,
+        paidAmount: paymentMethod === 'cash' ? 0 : orderAmount,
+        deliveryCharges: deliveryCharges || 0,
+        tipping: tipping || 0,
+        taxationAmount: taxationAmount || 0,
+        paymentMethod: paymentMethod || 'cash',
+        deliveryAddress: address,
+        instructions,
+        orderDate: orderDate ? new Date(orderDate) : new Date(),
+        isPickedUp: isPickedUp || false,
+        orderStatus: 'pending',
+        paymentStatus: paymentMethod === 'cash' ? 'pending' : 'paid',
+        timeline: [{
+          status: 'pending',
+          note: 'Order placed by customer',
+          updatedBy: context.user._id
+        }]
+      });
+
+      // Generate order ID if not auto-generated
+      if (!order.orderId) {
+        order.orderId = generateOrderId();
+        await order.save();
+      }
+
+      emitOrderUpdate(order._id.toString(), {
+        action: 'created',
+        order
+      });
+
+      auditLogger.logEvent({
+        category: 'orders',
+        action: 'created',
+        userId: context.user._id.toString(),
+        entityId: order._id.toString(),
+        entityType: 'order'
+      });
+
+      return await Order.findById(order._id)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+    },
+
+    async abortOrder(_, { id }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(id);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify ownership
+      if (order.customer?.toString() !== context.user._id.toString()) {
+        throw new Error('You can only cancel your own orders');
+      }
+
+      // Only allow cancellation if order is pending or accepted
+      if (!['pending', 'accepted'].includes(order.orderStatus)) {
+        throw new Error('Order cannot be cancelled at this stage');
+      }
+
+      order.orderStatus = 'cancelled';
+      order.cancelledAt = new Date();
+      await order.save();
+
+      emitOrderUpdate(order._id.toString(), {
+        action: 'cancelled',
+        order
+      });
+
+      auditLogger.logEvent({
+        category: 'orders',
+        action: 'cancelled',
+        userId: context.user._id.toString(),
+        entityId: order._id.toString(),
+        entityType: 'order'
+      });
+
+      return await Order.findById(order._id)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+    },
+
+    // Other Mutations
+    async forgotPassword(_, { email }) {
+      const user = await User.findOne({ email });
+      if (!user) {
+        // Don't reveal if user exists for security
+        return { result: 'success' };
+      }
+
+      // In production, send password reset email
+      // For now, return success
+      return { result: 'success' };
+    },
+
+    async resetPassword(_, { password, email }) {
+      const user = await User.findOne({ email });
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      user.password = password;
+      await user.save();
+
+      auditLogger.logEvent({
+        category: 'auth',
+        action: 'password_reset',
+        userId: user._id.toString()
+      });
+
+      return { result: 'success' };
+    },
+
+    async getCoupon(_, { coupon }) {
+      // Placeholder for coupon lookup
+      // In production, implement actual coupon model and validation
+      return {
+        _id: coupon,
+        title: coupon,
+        discount: 0,
+        enabled: false
+      };
+    },
+
+    async sendChatMessage(_, { message, orderId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(orderId);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // In production, implement chat message storage
+      // For now, return a placeholder response
+      return {
+        success: true,
+        message: 'Message sent',
+        data: {
+          id: require('crypto').randomUUID(),
+          message: message.message,
+          user: {
+            id: context.user._id.toString(),
+            name: context.user.name
+          },
+          createdAt: new Date()
+        }
+      };
+    },
+
+    async createActivity(_, { groupId, module, screenPath, type, details }) {
+      // Placeholder for activity tracking
+      // In production, implement actual activity logging
+      return 'success';
+    }
+  },
+
+  Subscription: {
+    subscriptionOrder: {
+      subscribe: async function* (_, { id }) {
+        // Get initial order state
+        const initialOrder = await Order.findById(id)
+          .populate('restaurant')
+          .populate('customer')
+          .populate('rider')
+          .lean();
+
+        if (initialOrder) {
+          yield initialOrder;
+        }
+
+        // Register subscription and get channel
+        const { channel, cleanup } = registerSubscription('orders', id);
+
+        try {
+          // Yield updates from channel
+          while (true) {
+            const result = await channel.next();
+            if (result.done) break;
+            yield result.value;
+          }
+        } finally {
+          cleanup();
+        }
+      }
+    },
+    subscriptionRiderLocation: {
+      subscribe: async function* (_, { riderId }) {
+        // Get initial rider state
+        const rider = await User.findById(riderId).lean();
+        const initialLocation = rider?.riderProfile?.location || { type: 'Point', coordinates: [0, 0] };
+        
+        yield { _id: riderId, location: initialLocation };
+
+        // Register subscription and get channel
+        const { channel, cleanup } = registerSubscription('riderLocations', riderId);
+
+        try {
+          while (true) {
+            const result = await channel.next();
+            if (result.done) break;
+            yield result.value;
+          }
+        } finally {
+          cleanup();
+        }
+      }
+    },
+    orderStatusChanged: {
+      subscribe: async function* (_, { userId }) {
+        // Register subscription and get channel
+        const { channel, cleanup } = registerSubscription('orderStatus', userId);
+
+        try {
+          while (true) {
+            const result = await channel.next();
+            if (result.done) break;
+            yield result.value;
+          }
+        } finally {
+          cleanup();
+        }
+      }
+    },
+    subscriptionNewMessage: {
+      subscribe: async function* (_, { order }) {
+        // Register subscription and get channel
+        const { channel, cleanup } = registerSubscription('chatMessages', order);
+
+        try {
+          while (true) {
+            const result = await channel.next();
+            if (result.done) break;
+            yield result.value;
+          }
+        } finally {
+          cleanup();
+        }
+      }
     }
   }
 };

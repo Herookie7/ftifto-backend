@@ -12,6 +12,18 @@ const emitOrderUpdate = (orderId, payload) => {
   }
 
   state.namespaces.orders.to(orderId).emit('order:update', payload);
+
+  // Bridge to GraphQL subscriptions
+  try {
+    const { bridgeOrderUpdate, bridgeOrderStatusChange } = require('../graphql/subscriptionBridge');
+    const orderData = payload.order || payload;
+    bridgeOrderUpdate(orderId, orderData);
+    if (orderData.customer) {
+      bridgeOrderStatusChange(orderData.customer.toString(), orderData);
+    }
+  } catch (error) {
+    // GraphQL subscriptions not initialized yet - ignore
+  }
 };
 
 const emitRiderLocation = (riderId, payload) => {
@@ -20,6 +32,15 @@ const emitRiderLocation = (riderId, payload) => {
   }
 
   state.namespaces.riders.to(riderId).emit('rider:location', payload);
+
+  // Bridge to GraphQL subscriptions
+  try {
+    const { bridgeRiderLocation } = require('../graphql/subscriptionBridge');
+    const locationData = payload.location ? { _id: riderId, location: payload.location } : { _id: riderId, location: { coordinates: [0, 0] } };
+    bridgeRiderLocation(riderId, locationData);
+  } catch (error) {
+    // GraphQL subscriptions not initialized yet - ignore
+  }
 };
 
 const emitNotification = (channel, payload) => {

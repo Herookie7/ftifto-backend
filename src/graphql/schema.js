@@ -221,6 +221,7 @@ const typeDefs = gql`
     details: String
     label: String
     selected: Boolean
+    location: Location
   }
 
   type OrderItem {
@@ -291,6 +292,9 @@ const typeDefs = gql`
     skipEmailVerification: Boolean
     costType: String
     customerAppVersion: String
+    twilioEnabled: Boolean
+    appAmplitudeApiKey: String
+    customerAppSentryUrl: String
   }
 
   type Cuisine {
@@ -338,6 +342,78 @@ const typeDefs = gql`
     updatedAt: Date
   }
 
+  type City {
+    id: String
+    name: String
+    latitude: Float
+    longitude: Float
+  }
+
+  type Country {
+    cities: [City]
+  }
+
+  type LoginResponse {
+    userId: ID
+    token: String
+    tokenExpiration: String
+    isActive: Boolean
+    name: String
+    email: String
+    phone: String
+    isNewUser: Boolean
+  }
+
+  type AuthResponse {
+    userId: ID
+    token: String
+    tokenExpiration: String
+    name: String
+    email: String
+    phone: String
+  }
+
+  type VerifyOtpResponse {
+    result: String
+  }
+
+  type ResultResponse {
+    result: String
+  }
+
+  type UserExistResponse {
+    userType: String
+    _id: ID
+    email: String
+    phone: String
+  }
+
+  type Coupon {
+    _id: ID
+    title: String
+    discount: Float
+    enabled: Boolean
+  }
+
+  type ChatMessage {
+    id: ID
+    message: String
+    user: User
+    createdAt: Date
+  }
+
+  type ChatMessageResponse {
+    success: Boolean
+    message: String
+    data: ChatMessage
+  }
+
+  type OrderStatusUpdate {
+    userId: ID
+    origin: String
+    order: Order
+  }
+
   type Query {
     # Restaurant queries
     nearByRestaurants(latitude: Float, longitude: Float, shopType: String): RestaurantListResponse
@@ -372,6 +448,8 @@ const typeDefs = gql`
     subCategoriesByParentId(parentCategoryId: String!): [SubCategory]
     getVersions: Versions
     banners: [Banner]
+    profile: User
+    getCountryByIso(iso: String!): Country
   }
 
   type Mutation {
@@ -382,6 +460,45 @@ const typeDefs = gql`
     updateUser(updateUserInput: UpdateUserInput!): User
     # Configuration mutations
     setVersions(customerAppVersion: String!): String
+
+    # Authentication mutations
+    login(email: String, password: String, type: String!, appleId: String, name: String, notificationToken: String): LoginResponse
+    createUser(userInput: CreateUserInput!): AuthResponse
+    verifyOtp(otp: String!, email: String, phone: String): VerifyOtpResponse
+    sendOtpToEmail(email: String!): ResultResponse
+    sendOtpToPhoneNumber(phone: String!): ResultResponse
+
+    # User management mutations
+    emailExist(email: String!): UserExistResponse
+    phoneExist(phone: String!): UserExistResponse
+    changePassword(oldPassword: String!, newPassword: String!): String
+    updateNotificationStatus(offerNotification: Boolean!, orderNotification: Boolean!): User
+    Deactivate(isActive: Boolean!, email: String!): User
+    pushToken(token: String): User
+
+    # Address mutations
+    createAddress(addressInput: AddressInput!): User
+    editAddress(addressInput: AddressInput!): User
+    deleteAddress(id: ID!): User
+    deleteBulkAddresses(ids: [ID!]!): User
+
+    # Order mutations
+    placeOrder(restaurant: String!, orderInput: [OrderInput!]!, paymentMethod: String!, couponCode: String, tipping: Float!, taxationAmount: Float!, address: AddressInput!, orderDate: String!, isPickedUp: Boolean!, deliveryCharges: Float!, instructions: String): Order
+    abortOrder(id: String!): Order
+
+    # Other mutations
+    forgotPassword(email: String!): ResultResponse
+    resetPassword(password: String!, email: String!): ResultResponse
+    getCoupon(coupon: String!): Coupon
+    sendChatMessage(message: ChatMessageInput!, orderId: ID!): ChatMessageResponse
+    createActivity(groupId: String!, module: String!, screenPath: String!, type: String!, details: String!): String
+  }
+
+  type Subscription {
+    subscriptionOrder(id: String!): Order
+    subscriptionRiderLocation(riderId: String!): User
+    orderStatusChanged(userId: String!): OrderStatusUpdate
+    subscriptionNewMessage(order: ID!): ChatMessage
   }
 
   input ReviewInput {
@@ -397,6 +514,71 @@ const typeDefs = gql`
     emailIsVerified: Boolean
     isOrderNotification: Boolean
     isOfferNotification: Boolean
+  }
+
+  input CreateUserInput {
+    phone: String
+    email: String
+    password: String
+    name: String
+    notificationToken: String
+    appleId: String
+    emailIsVerified: Boolean
+    isPhoneExists: Boolean
+  }
+
+  input AddressInput {
+    _id: ID
+    label: String
+    deliveryAddress: String
+    details: String
+    location: LocationInput
+    selected: Boolean
+  }
+
+  input LocationInput {
+    type: String
+    coordinates: [Float]
+  }
+
+  input OrderInput {
+    food: String!
+    title: String!
+    description: String
+    image: String
+    quantity: Int!
+    variation: VariationInput
+    addons: [AddonInput]
+    specialInstructions: String
+  }
+
+  input VariationInput {
+    _id: ID
+    title: String
+    price: Float
+    discounted: Float
+    addons: [String]
+  }
+
+  input AddonInput {
+    _id: ID
+    title: String
+    description: String
+    quantityMinimum: Int
+    quantityMaximum: Int
+    options: [AddonOptionInput]
+  }
+
+  input AddonOptionInput {
+    _id: ID
+    title: String
+    description: String
+    price: Float
+  }
+
+  input ChatMessageInput {
+    message: String!
+    userId: ID
   }
 `;
 
