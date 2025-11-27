@@ -756,6 +756,244 @@ const resolvers = {
       return {
         cities: []
       };
+    },
+
+    // Seller/Restaurant queries
+    async restaurantOrders(_, __, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Get restaurant owned by the authenticated user
+      const restaurant = await Restaurant.findOne({ owner: context.user._id }).lean();
+      if (!restaurant) {
+        return [];
+      }
+
+      // Get all orders for this restaurant
+      const orders = await Order.find({ restaurant: restaurant._id, isActive: true })
+        .populate('customer', 'name phone email')
+        .populate('rider', 'name username available')
+        .populate('restaurant', 'name image address location')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return orders.map(order => ({
+        ...order,
+        id: order._id.toString(),
+        user: order.customer,
+        items: (order.items || []).map(item => ({
+          ...item,
+          id: item._id?.toString() || item._id,
+          food: item.product?.toString() || item.food
+        }))
+      }));
+    },
+
+    async earnings(_, { userType, userId, orderType, paymentMethod, pagination, dateFilter }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Get restaurant owned by the authenticated user
+      const restaurant = await Restaurant.findOne({ owner: context.user._id }).lean();
+      if (!restaurant) {
+        return {
+          data: {
+            grandTotalEarnings: { storeTotal: 0 },
+            earnings: []
+          },
+          message: 'No restaurant found'
+        };
+      }
+
+      // Build query for orders
+      const orderQuery = { restaurant: restaurant._id, isActive: true };
+      
+      if (orderType) {
+        orderQuery.isPickedUp = orderType === 'PICKUP';
+      }
+      
+      if (paymentMethod) {
+        orderQuery.paymentMethod = paymentMethod;
+      }
+
+      if (dateFilter?.startDate || dateFilter?.endDate) {
+        orderQuery.createdAt = {};
+        if (dateFilter.startDate) {
+          orderQuery.createdAt.$gte = new Date(dateFilter.startDate);
+        }
+        if (dateFilter.endDate) {
+          orderQuery.createdAt.$lte = new Date(dateFilter.endDate);
+        }
+      }
+
+      const orders = await Order.find(orderQuery).lean();
+      
+      // Calculate total earnings (orderAmount - commission)
+      const totalEarnings = orders.reduce((sum, order) => {
+        const commission = (order.orderAmount * (restaurant.commissionRate || 0)) / 100;
+        return sum + (order.orderAmount - commission);
+      }, 0);
+
+      return {
+        data: {
+          grandTotalEarnings: {
+            storeTotal: totalEarnings
+          },
+          earnings: [{
+            storeEarnings: {
+              totalEarnings: totalEarnings
+            }
+          }]
+        },
+        message: 'Success'
+      };
+    },
+
+    async transactionHistory(_, { userType, userId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Get restaurant owned by the authenticated user
+      const restaurant = await Restaurant.findOne({ owner: context.user._id }).lean();
+      if (!restaurant) {
+        return { data: [] };
+      }
+
+      // Get orders with payment status
+      const orders = await Order.find({ 
+        restaurant: restaurant._id, 
+        isActive: true,
+        paymentStatus: 'paid'
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return {
+        data: orders.map(order => ({
+          status: order.paymentStatus || 'pending',
+          amountTransferred: order.orderAmount,
+          createdAt: order.createdAt
+        }))
+      };
+    },
+
+    async storeCurrentWithdrawRequest(_, { storeId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Get restaurant
+      const restaurant = await Restaurant.findOne({ 
+        _id: storeId || undefined,
+        owner: context.user._id 
+      }).lean();
+
+      if (!restaurant) {
+        return null;
+      }
+
+      // Placeholder - implement actual withdraw request model if exists
+      // For now, return null as withdraw requests may not be implemented yet
+      return null;
+    },
+
+    async storeEarningsGraph(_, { storeId, page = 1, limit = 10, startDate, endDate }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Get restaurant
+      const restaurant = await Restaurant.findOne({ 
+        _id: storeId,
+        owner: context.user._id 
+      }).lean();
+
+      if (!restaurant) {
+        return {
+          totalCount: 0,
+          earnings: []
+        };
+      }
+
+      // Build query
+      const orderQuery = { restaurant: restaurant._id, isActive: true };
+      if (startDate || endDate) {
+        orderQuery.createdAt = {};
+        if (startDate) orderQuery.createdAt.$gte = new Date(startDate);
+        if (endDate) orderQuery.createdAt.$lte = new Date(endDate);
+      }
+
+      const orders = await Order.find(orderQuery)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean();
+
+      // Group by date and calculate earnings
+      const earningsByDate = {};
+      orders.forEach(order => {
+        const date = new Date(order.createdAt).toISOString().split('T')[0];
+        if (!earningsByDate[date]) {
+          earningsByDate[date] = {
+            totalOrderAmount: 0,
+            totalEarnings: 0,
+            orders: []
+          };
+        }
+        const commission = (order.orderAmount * (restaurant.commissionRate || 0)) / 100;
+        earningsByDate[date].totalOrderAmount += order.orderAmount;
+        earningsByDate[date].totalEarnings += (order.orderAmount - commission);
+        earningsByDate[date].orders.push(order);
+      });
+
+      const earnings = Object.entries(earningsByDate).map(([date, data]) => ({
+        _id: date,
+        totalEarningsSum: data.totalEarnings,
+        earningsArray: [{
+          totalOrderAmount: data.totalOrderAmount,
+          totalEarnings: data.totalEarnings,
+          orderDetails: {
+            orderId: data.orders[0]?.orderId || '',
+            orderType: data.orders[0]?.isPickedUp ? 'PICKUP' : 'DELIVERY',
+            paymentMethod: data.orders[0]?.paymentMethod || 'CASH'
+          },
+          date: date
+        }]
+      }));
+
+      return {
+        totalCount: earnings.length,
+        earnings
+      };
+    },
+
+    async chat(_, { order }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify user has access to this order
+      const orderDoc = await Order.findById(order).lean();
+      if (!orderDoc) {
+        throw new Error('Order not found');
+      }
+
+      // Check if user is restaurant owner, customer, or rider
+      const restaurant = await Restaurant.findById(orderDoc.restaurant).lean();
+      const isRestaurantOwner = restaurant?.owner?.toString() === context.user._id.toString();
+      const isCustomer = orderDoc.customer?.toString() === context.user._id.toString();
+      const isRider = orderDoc.rider?.toString() === context.user._id.toString();
+
+      if (!isRestaurantOwner && !isCustomer && !isRider) {
+        throw new Error('Access denied');
+      }
+
+      // Placeholder - return empty array for now
+      // In production, implement actual chat message storage
+      return [];
     }
   },
 
@@ -1412,8 +1650,12 @@ const resolvers = {
         throw new Error('Order not found');
       }
 
-      // Verify ownership
-      if (order.customer?.toString() !== context.user._id.toString()) {
+      // Verify ownership - allow restaurant owner or customer
+      const restaurant = await Restaurant.findById(order.restaurant).lean();
+      const isOwner = restaurant?.owner?.toString() === context.user._id.toString();
+      const isCustomer = order.customer?.toString() === context.user._id.toString();
+      
+      if (!isOwner && !isCustomer) {
         throw new Error('You can only cancel your own orders');
       }
 
@@ -1437,6 +1679,78 @@ const resolvers = {
         userId: context.user._id.toString(),
         entityId: order._id.toString(),
         entityType: 'order'
+      });
+
+      return await Order.findById(order._id)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+    },
+
+    async assignOrder(_, { id }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(id);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify user is a rider
+      if (context.user.userType !== 'rider') {
+        throw new Error('Only riders can assign orders');
+      }
+
+      // Assign rider to order
+      order.rider = context.user._id;
+      order.orderStatus = 'assigned';
+      order.assignedAt = new Date();
+      await order.save();
+
+      emitOrderUpdate(order._id.toString(), {
+        action: 'assigned',
+        order
+      });
+
+      return await Order.findById(order._id)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+    },
+
+    async updateOrderStatusRider(_, { id, status }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(id);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify user is the assigned rider
+      if (order.rider?.toString() !== context.user._id.toString()) {
+        throw new Error('You can only update orders assigned to you');
+      }
+
+      order.orderStatus = status;
+      
+      // Update timestamps based on status
+      if (status === 'picked') {
+        order.pickedAt = new Date();
+      } else if (status === 'delivered') {
+        order.deliveredAt = new Date();
+        order.orderStatus = 'completed';
+      }
+
+      await order.save();
+
+      emitOrderUpdate(order._id.toString(), {
+        action: 'status_updated',
+        order
       });
 
       return await Order.findById(order._id)
@@ -1519,6 +1833,177 @@ const resolvers = {
       // Placeholder for activity tracking
       // In production, implement actual activity logging
       return 'success';
+    },
+
+    // Seller/Restaurant mutations
+    async createWithdrawRequest(_, { requestAmount, userId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findOne({ owner: context.user._id }).lean();
+      if (!restaurant) {
+        throw new Error('Restaurant not found');
+      }
+
+      // Placeholder implementation - create actual WithdrawRequest model if needed
+      // For now, return a mock response
+      return {
+        _id: require('crypto').randomUUID(),
+        requestAmount,
+        status: 'pending',
+        createdAt: new Date(),
+        userId: context.user._id.toString(),
+        storeId: restaurant._id.toString()
+      };
+    },
+
+    async updateTimings(_, { id, openingTimes }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findOne({ 
+        _id: id,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      // Update opening times
+      restaurant.openingTimes = openingTimes.map(timing => ({
+        day: timing.day,
+        times: timing.times.map(time => ({
+          startTime: time.startTime,
+          endTime: time.endTime
+        }))
+      }));
+
+      await restaurant.save();
+
+      return restaurant;
+    },
+
+    async toggleStoreAvailability(_, { restaurantId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: restaurantId,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      restaurant.isAvailable = !restaurant.isAvailable;
+      await restaurant.save();
+
+      return restaurant;
+    },
+
+    async updateRiderLocation(_, { latitude, longitude }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.userType !== 'rider') {
+        throw new Error('Only riders can update location');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Update rider location
+      if (!user.riderProfile) {
+        user.riderProfile = {};
+      }
+      user.riderProfile.location = {
+        type: 'Point',
+        coordinates: [parseFloat(longitude), parseFloat(latitude)]
+      };
+
+      await user.save();
+
+      return user;
+    },
+
+    async updateRiderLicenseDetails(_, { id, licenseDetails }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(id || context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (user._id.toString() !== context.user._id.toString()) {
+        throw new Error('You can only update your own details');
+      }
+
+      if (!user.riderProfile) {
+        user.riderProfile = {};
+      }
+      user.riderProfile.licenseDetails = licenseDetails;
+      await user.save();
+
+      return user;
+    },
+
+    async updateRiderVehicleDetails(_, { id, vehicleDetails }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(id || context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (user._id.toString() !== context.user._id.toString()) {
+        throw new Error('You can only update your own details');
+      }
+
+      if (!user.riderProfile) {
+        user.riderProfile = {};
+      }
+      user.riderProfile.vehicleDetails = vehicleDetails;
+      await user.save();
+
+      return user;
+    },
+
+    async updateRestaurantBussinessDetails(_, { id, bussinessDetails }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: id,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      restaurant.bussinessDetails = bussinessDetails;
+      await restaurant.save();
+
+      return {
+        success: true,
+        message: 'Business details updated successfully',
+        data: restaurant
+      };
     }
   },
 

@@ -128,6 +128,10 @@ const typeDefs = gql`
     enableNotification: Boolean
     deliveryBounds: Location
     owner: User
+    bussinessDetails: BussinessDetails
+    totalWalletAmount: Float
+    withdrawnWalletAmount: Float
+    currentWalletAmount: Float
   }
 
   type RestaurantPreview {
@@ -397,6 +401,7 @@ const typeDefs = gql`
 
   type ChatMessage {
     id: ID
+    orderId: String
     message: String
     user: User
     createdAt: Date
@@ -412,6 +417,108 @@ const typeDefs = gql`
     userId: ID
     origin: String
     order: Order
+  }
+
+  type EarningsData {
+    grandTotalEarnings: GrandTotalEarnings
+    earnings: [EarningsDetail]
+  }
+
+  type GrandTotalEarnings {
+    storeTotal: Float
+  }
+
+  type EarningsDetail {
+    storeEarnings: StoreEarnings
+  }
+
+  type StoreEarnings {
+    totalEarnings: Float
+  }
+
+  type EarningsResponse {
+    data: EarningsData
+    message: String
+  }
+
+  type TransactionHistoryData {
+    status: String
+    amountTransferred: Float
+    createdAt: Date
+  }
+
+  type TransactionHistoryResponse {
+    data: [TransactionHistoryData]
+  }
+
+  type WithdrawRequest {
+    _id: ID
+    requestAmount: Float
+    status: String
+    createdAt: Date
+    userId: String
+    storeId: String
+  }
+
+  type StoreEarningsGraphData {
+    totalCount: Int
+    earnings: [StoreEarningsGraphItem]
+  }
+
+  type StoreEarningsGraphItem {
+    _id: ID
+    totalEarningsSum: Float
+    earningsArray: [EarningsArrayItem]
+  }
+
+  type EarningsArrayItem {
+    totalOrderAmount: Float
+    totalEarnings: Float
+    orderDetails: OrderDetails
+    date: String
+  }
+
+  type OrderDetails {
+    orderId: String
+    orderType: String
+    paymentMethod: String
+  }
+
+  enum UserTypeEnum {
+    CUSTOMER
+    SELLER
+    RIDER
+  }
+
+  enum OrderTypeEnum {
+    DELIVERY
+    PICKUP
+  }
+
+  enum PaymentMethodEnum {
+    CASH
+    CARD
+    WALLET
+  }
+
+  input PaginationInput {
+    page: Int
+    limit: Int
+  }
+
+  input DateFilter {
+    startDate: String
+    endDate: String
+  }
+
+  input TimingsInput {
+    day: String!
+    times: [TimeSlotInput!]!
+  }
+
+  input TimeSlotInput {
+    startTime: String!
+    endTime: String!
   }
 
   type Query {
@@ -450,6 +557,14 @@ const typeDefs = gql`
     banners: [Banner]
     profile: User
     getCountryByIso(iso: String!): Country
+    
+    # Seller/Restaurant queries
+    restaurantOrders: [Order]
+    earnings(userType: UserTypeEnum, userId: String, orderType: OrderTypeEnum, paymentMethod: PaymentMethodEnum, pagination: PaginationInput, dateFilter: DateFilter): EarningsResponse
+    transactionHistory(userType: UserTypeEnum, userId: String): TransactionHistoryResponse
+    storeCurrentWithdrawRequest(storeId: String): WithdrawRequest
+    storeEarningsGraph(storeId: ID!, page: Int, limit: Int, startDate: String, endDate: String): StoreEarningsGraphData
+    chat(order: String!): [ChatMessage]
   }
 
   type Mutation {
@@ -485,6 +600,8 @@ const typeDefs = gql`
     # Order mutations
     placeOrder(restaurant: String!, orderInput: [OrderInput!]!, paymentMethod: String!, couponCode: String, tipping: Float!, taxationAmount: Float!, address: AddressInput!, orderDate: String!, isPickedUp: Boolean!, deliveryCharges: Float!, instructions: String): Order
     abortOrder(id: String!): Order
+    assignOrder(id: String!): Order
+    updateOrderStatusRider(id: String!, status: String!): Order
 
     # Other mutations
     forgotPassword(email: String!): ResultResponse
@@ -492,6 +609,15 @@ const typeDefs = gql`
     getCoupon(coupon: String!): Coupon
     sendChatMessage(message: ChatMessageInput!, orderId: ID!): ChatMessageResponse
     createActivity(groupId: String!, module: String!, screenPath: String!, type: String!, details: String!): String
+    
+    # Seller/Restaurant mutations
+    createWithdrawRequest(requestAmount: Float!, userId: String!): WithdrawRequest
+    updateTimings(id: String!, openingTimes: [TimingsInput!]!): Restaurant
+    toggleStoreAvailability(restaurantId: String!): Restaurant
+    updateRiderLocation(latitude: String!, longitude: String!): User
+    updateRiderLicenseDetails(id: String!, licenseDetails: LicenseDetailsInput): User
+    updateRiderVehicleDetails(id: String!, vehicleDetails: VehicleDetailsInput): User
+    updateRestaurantBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): UpdateRestaurantResponse
   }
 
   type Subscription {
@@ -579,6 +705,39 @@ const typeDefs = gql`
   input ChatMessageInput {
     message: String!
     userId: ID
+  }
+
+  input LicenseDetailsInput {
+    licenseNumber: String
+    expiryDate: String
+    licenseImage: String
+  }
+
+  input VehicleDetailsInput {
+    vehicleType: String
+    vehicleNumber: String
+    vehicleModel: String
+    vehicleImage: String
+  }
+
+  type BussinessDetails {
+    bankName: String
+    accountNumber: String
+    accountName: String
+    accountCode: String
+  }
+
+  input BussinessDetailsInput {
+    bankName: String
+    accountNumber: String
+    accountName: String
+    accountCode: String
+  }
+
+  type UpdateRestaurantResponse {
+    success: Boolean
+    message: String
+    data: Restaurant
   }
 `;
 

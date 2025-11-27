@@ -129,7 +129,13 @@ const restaurantSchema = new mongoose.Schema(
           }
         ]
       }
-    ]
+    ],
+    bussinessDetails: {
+      bankName: { type: String, trim: true },
+      accountNumber: { type: String, trim: true },
+      accountName: { type: String, trim: true },
+      accountCode: { type: String, trim: true }
+    }
   },
   { timestamps: true }
 );

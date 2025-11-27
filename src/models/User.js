@@ -112,7 +112,18 @@ const userSchema = new mongoose.Schema(
       accountNumber: { type: String, trim: true },
       currentWalletAmount: { type: Number, default: 0 },
       totalWalletAmount: { type: Number, default: 0 },
-      withdrawnWalletAmount: { type: Number, default: 0 }
+      withdrawnWalletAmount: { type: Number, default: 0 },
+      licenseDetails: {
+        licenseNumber: { type: String, trim: true },
+        expiryDate: { type: String, trim: true },
+        licenseImage: { type: String, trim: true }
+      },
+      vehicleDetails: {
+        vehicleType: { type: String, trim: true },
+        vehicleNumber: { type: String, trim: true },
+        vehicleModel: { type: String, trim: true },
+        vehicleImage: { type: String, trim: true }
+      }
     },
     preferences: {
       language: { type: String, default: 'en' },
