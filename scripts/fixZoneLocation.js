@@ -11,7 +11,8 @@
 
 const mongoose = require('mongoose');
 const Zone = require('../src/models/Zone');
-const config = require('../src/config/env');
+const config = require('../src/config');
+require('dotenv').config();
 
 // Default coordinates for Phnom Penh Central (you should adjust these)
 const DEFAULT_COORDINATES = [
@@ -27,10 +28,11 @@ const DEFAULT_COORDINATES = [
 async function fixZoneLocation(zoneId, coordinates = null) {
   try {
     // Connect to MongoDB
-    await mongoose.connect(config.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
+    const mongoUri = config.db.uri || process.env.MONGODB_URI || process.env.MONGO_URI;
+    if (!mongoUri) {
+      throw new Error('MONGO_URI or MONGODB_URI environment variable is required');
+    }
+    await mongoose.connect(mongoUri);
     console.log('Connected to MongoDB');
 
     // Find the zone

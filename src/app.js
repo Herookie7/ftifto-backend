@@ -236,8 +236,9 @@ const initializeGraphQL = async (server) => {
       context: async ({ req, connection }) => {
         // Handle subscriptions (connection context) vs queries/mutations (req context)
         if (connection) {
-          // Subscription context
-          const token = connection.context?.authorization?.split(' ')[1] || null;
+          // Subscription context - handle both authorization and Authorization
+          const authHeader = connection.context?.authorization || connection.context?.Authorization || null;
+          const token = authHeader?.split(' ')[1] || null;
           if (!token) {
             return { user: null };
           }
@@ -246,6 +247,16 @@ const initializeGraphQL = async (server) => {
             const decoded = verifyToken(token);
             const User = require('./models/User');
             const user = await User.findById(decoded.id);
+            
+            if (!user) {
+              return { user: null };
+            }
+            
+            if (user.isActive === false) {
+              logger.warn('Inactive user attempted GraphQL subscription', { userId: user._id.toString() });
+              return { user: null };
+            }
+            
             return { user };
           } catch (error) {
             logger.warn('Invalid token in subscription context', { error: error.message });
@@ -265,6 +276,15 @@ const initializeGraphQL = async (server) => {
           const decoded = verifyToken(token);
           const User = require('./models/User');
           const user = await User.findById(decoded.id);
+          
+          if (!user) {
+            return { user: null };
+          }
+          
+          if (user.isActive === false) {
+            logger.warn('Inactive user attempted GraphQL operation', { userId: user._id.toString() });
+            return { user: null };
+          }
           
           return { user };
         } catch (error) {

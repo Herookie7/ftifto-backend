@@ -6,6 +6,13 @@ const Restaurant = require('../src/models/Restaurant');
 const Product = require('../src/models/Product');
 const Category = require('../src/models/Category');
 const Zone = require('../src/models/Zone');
+const Banner = require('../src/models/Banner');
+const Cuisine = require('../src/models/Cuisine');
+const Offer = require('../src/models/Offer');
+const Section = require('../src/models/Section');
+const Review = require('../src/models/Review');
+const Order = require('../src/models/Order');
+const Configuration = require('../src/models/Configuration');
 
 // Mandsaur coordinates: 24.0667° N, 75.0833° E
 const MANDAUR_COORDS = [75.0833, 24.0667]; // [longitude, latitude]
@@ -43,21 +50,131 @@ async function seedMandsaurData() {
     await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
 
-    // Check if Mandsaur zone already exists
-    const existingZone = await Zone.findOne({ title: { $regex: /Mandsaur/i } });
-    if (existingZone) {
-      console.log('⚠️  Mandsaur zone already exists. Skipping zone creation.');
-    } else {
-      // Create Zone for Mandsaur
-      const zone = await Zone.create({
-        title: 'Mandsaur Zone',
-        description: `Delivery zone for ${MANDAUR_CITY}, ${MANDAUR_STATE}`,
-        location: createMandsaurPolygon(),
-        tax: 5,
-        isActive: true
-      });
-      console.log(`✅ Created zone: ${zone.title}`);
-    }
+    // WARNING: This will drop the entire database referenced by the URI.
+    // Intended for local/dev use only.
+    const db = mongoose.connection.db;
+    console.log(`⚠️  Dropping existing database "${db.databaseName}"...`);
+    await db.dropDatabase();
+    console.log('✅ Database dropped. Seeding fresh Mandsaur demo data...');
+
+    // Create basic configuration for the platform
+    await Configuration.create({
+      currency: 'INR',
+      currencySymbol: '₹',
+      deliveryRate: 20,
+      testOtp: '123456',
+      skipMobileVerification: true,
+      skipEmailVerification: true,
+      costType: 'fixed'
+    });
+    console.log('✅ Created configuration document');
+
+    // Create Zone for Mandsaur
+    const zone = await Zone.create({
+      title: 'Mandsaur Zone',
+      description: `Delivery zone for ${MANDAUR_CITY}, ${MANDAUR_STATE}`,
+      location: createMandsaurPolygon(),
+      tax: 5,
+      isActive: true
+    });
+    console.log(`✅ Created zone: ${zone.title}`);
+
+    // Create core cuisines
+    const cuisines = await Cuisine.create([
+      {
+        name: 'Indian',
+        description: 'North & South Indian favourites from Mandsaur',
+        image: 'https://images.unsplash.com/photo-1603899122634-2f24c0a286d5?w=400&q=80',
+        shopType: 'restaurant'
+      },
+      {
+        name: 'Chinese',
+        description: 'Indian Chinese street food classics',
+        image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80',
+        shopType: 'restaurant'
+      },
+      {
+        name: 'Snacks & Sweets',
+        description: 'Mandsaur style namkeen and mithai',
+        image: 'https://images.unsplash.com/photo-1604908176997-1251884b08a0?w=400&q=80',
+        shopType: 'restaurant'
+      },
+      {
+        name: 'Pizza & Fast Food',
+        description: 'Pizzas, burgers and more',
+        image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&q=80',
+        shopType: 'restaurant'
+      },
+      {
+        name: 'South Indian',
+        description: 'Idli, dosa, uttapam & more',
+        image: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&q=80',
+        shopType: 'restaurant'
+      }
+    ]);
+    console.log(`✅ Created ${cuisines.length} cuisines`);
+
+    // Create core users (admin, rider, customer)
+    console.log('👤 Creating core users (admin, rider, customer)...');
+    const [adminUser, riderUser, customerUser] = await User.create([
+      {
+        name: 'Mandsaur Admin',
+        email: 'admin@mandsaur.test',
+        phone: '9000000001',
+        password: 'password123',
+        role: 'admin',
+        isActive: true,
+        phoneIsVerified: true,
+        emailIsVerified: true
+      },
+      {
+        name: 'Mandsaur Rider',
+        email: 'rider@mandsaur.test',
+        phone: '9000000002',
+        password: 'password123',
+        role: 'rider',
+        isActive: true,
+        phoneIsVerified: true,
+        emailIsVerified: true,
+        riderProfile: {
+          vehicleType: 'bike',
+          licenseNumber: 'MP14-RIDER-001',
+          available: true,
+          location: {
+            type: 'Point',
+            coordinates: MANDAUR_COORDS
+          }
+        }
+      },
+      {
+        name: 'Mandsaur Customer',
+        email: 'customer@mandsaur.test',
+        phone: '9000000003',
+        password: 'password123',
+        role: 'customer',
+        isActive: true,
+        phoneIsVerified: true,
+        emailIsVerified: true,
+        addressBook: [
+          {
+            label: 'Home',
+            deliveryAddress: `Near Bus Stand, ${MANDAUR_CITY}`,
+            details: '2nd Floor, Shree Apartment',
+            selected: true,
+            street: 'Bus Stand Road',
+            city: MANDAUR_CITY,
+            state: MANDAUR_STATE,
+            country: MANDAUR_COUNTRY,
+            postalCode: MANDAUR_PINCODE,
+            location: {
+              type: 'Point',
+              coordinates: MANDAUR_COORDS
+            }
+          }
+        ]
+      }
+    ]);
+    console.log('✅ Core users created');
 
     // Restaurants data
     const restaurantsData = [
@@ -250,14 +367,10 @@ async function seedMandsaurData() {
 
     console.log('\n🍽️  Creating restaurants and products...\n');
 
-    for (const restData of restaurantsData) {
-      // Check if restaurant already exists
-      const existingRest = await Restaurant.findOne({ name: restData.name, address: { $regex: MANDAUR_CITY } });
-      if (existingRest) {
-        console.log(`⚠️  Restaurant "${restData.name}" already exists. Skipping...`);
-        continue;
-      }
+    const createdRestaurants = [];
+    const allProducts = [];
 
+    for (const restData of restaurantsData) {
       // Create owner user
       const owner = await User.create({
         name: `${restData.name} Owner`,
@@ -278,6 +391,8 @@ async function seedMandsaurData() {
           type: 'Point',
           coordinates: restData.coordinates
         },
+        image: restData.image || 'https://images.unsplash.com/photo-1551218808-94e220e084d2?w=800&q=80',
+        logo: restData.logo || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400&q=80',
         phone: restData.phone,
         cuisines: restData.cuisines,
         zone: 'Mandsaur Zone',
@@ -336,17 +451,173 @@ async function seedMandsaurData() {
         category.foods = products.map(p => p._id);
         await category.save();
         categoryIds.push(category._id);
+        allProducts.push(...products);
 
         console.log(`   📦 Created category "${catData.title}" with ${products.length} products`);
       }
 
       restaurant.categories = categoryIds;
       await restaurant.save();
+
+      createdRestaurants.push(restaurant);
+    }
+
+    // Create banners pointing to Mandsaur experiences
+    console.log('\n🖼️  Creating banners...\n');
+    await Banner.create([
+      {
+        title: 'Taste of Mandsaur',
+        description: 'Discover the best food around Mandsaur city',
+        action: 'NAVIGATE',
+        screen: 'Home',
+        file: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&q=80',
+        parameters: JSON.stringify({ zone: 'Mandsaur Zone' }),
+        order: 1
+      },
+      {
+        title: 'Evening Snacks at Gandhi Chowk',
+        description: 'Hot samosas, kachori & jalebi from local favourites',
+        action: 'NAVIGATE',
+        screen: 'RestaurantList',
+        file: 'https://images.unsplash.com/photo-1589308078059-be1415eab4c3?w=1200&q=80',
+        parameters: JSON.stringify({ area: 'Gandhi Chowk', city: MANDAUR_CITY }),
+        order: 2
+      },
+      {
+        title: 'South Indian Breakfast',
+        description: 'Crispy dosas and fluffy idlis near Station Road',
+        action: 'NAVIGATE',
+        screen: 'RestaurantList',
+        file: 'https://images.unsplash.com/photo-1603899122634-2f24c0a286d5?w=1200&q=80',
+        parameters: JSON.stringify({ cuisine: 'South Indian' }),
+        order: 3
+      }
+    ]);
+
+    // Create offers and sections
+    console.log('\n🏷️  Creating offers and sections...\n');
+    const now = new Date();
+    const inSevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    await Offer.create([
+      {
+        name: 'Mandsaur Lunch Combo',
+        tag: 'LUNCH',
+        description: 'Flat 20% off on lunch orders above ₹300',
+        restaurants: createdRestaurants.map(r => r._id),
+        discount: 20,
+        discountType: 'percentage',
+        startDate: now,
+        endDate: inSevenDays,
+        image: 'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=800&q=80'
+      },
+      {
+        name: 'Evening Chai & Snacks',
+        tag: 'SNACKS',
+        description: 'Get ₹50 off on orders from 4–7 PM',
+        restaurants: createdRestaurants.map(r => r._id),
+        discount: 50,
+        discountType: 'fixed',
+        startDate: now,
+        endDate: inSevenDays,
+        image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80'
+      }
+    ]);
+
+    await Section.create([
+      {
+        name: 'Featured in Mandsaur',
+        description: 'Handpicked restaurants loved by locals',
+        restaurants: createdRestaurants.map(r => r._id),
+        order: 1
+      },
+      {
+        name: 'Snacks & Sweets',
+        description: 'Perfect for your evening cravings',
+        restaurants: createdRestaurants
+          .filter(r => r.name.includes('Sweets') || r.name.includes('Tiffin'))
+          .map(r => r._id),
+        order: 2
+      }
+    ]);
+
+    // Create sample orders & reviews
+    console.log('\n🧾  Creating sample orders and reviews...\n');
+    const customerAddress = customerUser.addressBook[0];
+
+    for (const restaurant of createdRestaurants) {
+      const restaurantProducts = allProducts.filter(p => p.restaurant.toString() === restaurant._id.toString());
+      if (!restaurantProducts.length) continue;
+
+      const product = restaurantProducts[0];
+
+      const order = await Order.create({
+        customer: customerUser._id,
+        restaurant: restaurant._id,
+        seller: null,
+        rider: riderUser._id,
+        items: [
+          {
+            product: product._id,
+            title: product.title,
+            description: product.description,
+            image: product.image,
+            quantity: 1,
+            variation: {
+              title: 'Regular',
+              price: product.price
+            },
+            addons: []
+          }
+        ],
+        orderAmount: product.price,
+        paidAmount: product.price,
+        deliveryCharges: 20,
+        tipping: 0,
+        taxationAmount: Math.round(product.price * 0.05),
+        paymentMethod: 'cash',
+        paymentStatus: 'paid',
+        orderStatus: 'delivered',
+        deliveryAddress: {
+          deliveryAddress: customerAddress.deliveryAddress,
+          details: customerAddress.details,
+          label: customerAddress.label || 'Home',
+          location: customerAddress.location
+        },
+        zone: zone.title,
+        deliveredAt: new Date(),
+        timeline: [
+          {
+            status: 'created',
+            note: 'Order created as demo data',
+            updatedBy: adminUser._id
+          },
+          {
+            status: 'delivered',
+            note: 'Delivered successfully (demo)',
+            updatedBy: adminUser._id
+          }
+        ]
+      });
+
+      await Review.create({
+        order: order._id,
+        restaurant: restaurant._id,
+        user: customerUser._id,
+        rating: restaurant.rating || 4,
+        description: `Great experience at ${restaurant.name} in ${MANDAUR_CITY}!`
+      });
     }
 
     console.log('\n✅ Mandsaur demo data created successfully!');
     console.log(`\n📍 Location: ${MANDAUR_CITY}, ${MANDAUR_STATE}, ${MANDAUR_PINCODE}`);
-    console.log(`📊 Created ${restaurantsData.length} restaurants with products\n`);
+    console.log(`📊 Created ${restaurantsData.length} restaurants with products`);
+    console.log(`📊 Cuisines: ${await Cuisine.countDocuments()}`);
+    console.log(`📊 Banners: ${await Banner.countDocuments()}`);
+    console.log(`📊 Offers: ${await Offer.countDocuments()}`);
+    console.log(`📊 Sections: ${await Section.countDocuments()}`);
+    console.log(`📊 Orders: ${await Order.countDocuments()}`);
+    console.log(`📊 Reviews: ${await Review.countDocuments()}`);
 
     await mongoose.disconnect();
     console.log('✅ Disconnected from MongoDB');

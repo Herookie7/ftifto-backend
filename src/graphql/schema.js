@@ -2,10 +2,11 @@ const { gql } = require('apollo-server-express');
 
 const typeDefs = gql`
   scalar Date
+  scalar JSON
 
   type Location {
     type: String
-    coordinates: [Float]
+    coordinates: JSON
   }
 
   type OpeningTime {
@@ -392,6 +393,16 @@ const typeDefs = gql`
     phone: String
   }
 
+  type RestaurantLoginResponse {
+    token: String
+    restaurantId: ID
+  }
+
+  type LastOrderCredsResponse {
+    restaurantUsername: String
+    restaurantPassword: String
+  }
+
   type Coupon {
     _id: ID
     title: String
@@ -560,6 +571,7 @@ const typeDefs = gql`
     
     # Seller/Restaurant queries
     restaurantOrders: [Order]
+    lastOrderCreds: LastOrderCredsResponse
     earnings(userType: UserTypeEnum, userId: String, orderType: OrderTypeEnum, paymentMethod: PaymentMethodEnum, pagination: PaginationInput, dateFilter: DateFilter): EarningsResponse
     transactionHistory(userType: UserTypeEnum, userId: String): TransactionHistoryResponse
     storeCurrentWithdrawRequest(storeId: String): WithdrawRequest
@@ -578,6 +590,7 @@ const typeDefs = gql`
 
     # Authentication mutations
     login(email: String, password: String, type: String!, appleId: String, name: String, notificationToken: String): LoginResponse
+    restaurantLogin(username: String!, password: String!, notificationToken: String): RestaurantLoginResponse
     createUser(userInput: CreateUserInput!): AuthResponse
     verifyOtp(otp: String!, email: String, phone: String): VerifyOtpResponse
     sendOtpToEmail(email: String!): ResultResponse
@@ -600,6 +613,10 @@ const typeDefs = gql`
     # Order mutations
     placeOrder(restaurant: String!, orderInput: [OrderInput!]!, paymentMethod: String!, couponCode: String, tipping: Float!, taxationAmount: Float!, address: AddressInput!, orderDate: String!, isPickedUp: Boolean!, deliveryCharges: Float!, instructions: String): Order
     abortOrder(id: String!): Order
+    acceptOrder(_id: String!, time: String): Order
+    cancelOrder(_id: String!, reason: String!): Order
+    orderPickedUp(_id: String!): Order
+    muteRing(orderId: String!): Boolean
     assignOrder(id: String!): Order
     updateOrderStatusRider(id: String!, status: String!): Order
 
@@ -664,7 +681,7 @@ const typeDefs = gql`
 
   input LocationInput {
     type: String
-    coordinates: [Float]
+    coordinates: JSON
   }
 
   input OrderInput {

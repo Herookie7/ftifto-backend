@@ -17,7 +17,32 @@ const { emitOrderUpdate } = require('../realtime/emitter');
 const auditLogger = require('../services/auditLogger');
 const { registerSubscription } = require('./subscriptionBridge');
 
+// JSON Scalar resolver (matching the schema)
+const { GraphQLScalarType, Kind } = require('graphql');
+
+const JSONScalar = new GraphQLScalarType({
+  name: 'JSON',
+  description: 'JSON scalar type for flexible data structures',
+  serialize(value) {
+    return value;
+  },
+  parseValue(value) {
+    return value;
+  },
+  parseLiteral(ast) {
+    switch (ast.kind) {
+      case Kind.STRING:
+        return JSON.parse(ast.value);
+      case Kind.OBJECT:
+        return ast;
+      default:
+        return null;
+    }
+  }
+});
+
 const resolvers = {
+  JSON: JSONScalar,
   Query: {
     // Nearby restaurants with full details
     async nearByRestaurants(_, { latitude, longitude, shopType }) {
@@ -790,6 +815,26 @@ const resolvers = {
       }));
     },
 
+    async lastOrderCreds(_, __, context) {
+      // Get the most recent order to retrieve restaurant credentials
+      const lastOrder = await Order.findOne({ isActive: true })
+        .populate('restaurant', 'username password')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (!lastOrder || !lastOrder.restaurant) {
+        return {
+          restaurantUsername: '',
+          restaurantPassword: ''
+        };
+      }
+
+      return {
+        restaurantUsername: lastOrder.restaurant.username || '',
+        restaurantPassword: lastOrder.restaurant.password || ''
+      };
+    },
+
     async earnings(_, { userType, userId, orderType, paymentMethod, pagination, dateFilter }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
@@ -1159,6 +1204,52 @@ const resolvers = {
     },
 
     // Authentication Mutations
+    async restaurantLogin(_, { username, password, notificationToken }, context) {
+      // Find restaurant by username and password
+      const restaurant = await Restaurant.findOne({ username, password }).lean();
+      
+      if (!restaurant) {
+        throw new Error('Invalid restaurant credentials');
+      }
+
+      if (!restaurant.isActive) {
+        throw new Error('Restaurant account is deactivated');
+      }
+
+      // Get the restaurant owner
+      const owner = await User.findById(restaurant.owner);
+      if (!owner) {
+        throw new Error('Restaurant owner not found');
+      }
+
+      if (owner.isActive === false) {
+        throw new Error('Account is deactivated');
+      }
+
+      // Update notification token if provided
+      if (notificationToken) {
+        await Restaurant.findByIdAndUpdate(restaurant._id, {
+          notificationToken
+        });
+      }
+
+      // Generate token for the owner user
+      const token = signToken({ id: owner._id, role: owner.role });
+
+      auditLogger.logEvent({
+        category: 'auth',
+        action: 'restaurant_login',
+        userId: owner._id.toString(),
+        entityId: restaurant._id.toString(),
+        entityType: 'restaurant'
+      });
+
+      return {
+        token,
+        restaurantId: restaurant._id.toString()
+      };
+    },
+
     async login(_, { email, password, type, appleId, name, notificationToken }, context) {
       let user;
 
@@ -1638,6 +1729,166 @@ const resolvers = {
         .populate('customer')
         .populate('rider')
         .lean();
+    },
+
+    async acceptOrder(_, { _id, time }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(_id);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findById(order.restaurant).lean();
+      if (!restaurant || restaurant.owner?.toString() !== context.user._id.toString()) {
+        throw new Error('You can only accept orders for your restaurant');
+      }
+
+      // Only allow accepting pending orders
+      if (order.orderStatus !== 'pending') {
+        throw new Error('Order cannot be accepted at this stage');
+      }
+
+      order.orderStatus = 'accepted';
+      order.acceptedAt = new Date();
+      if (time) {
+        order.preparationTime = parseInt(time, 10);
+      }
+      await order.save();
+
+      emitOrderUpdate(order._id.toString(), {
+        action: 'accepted',
+        order
+      });
+
+      auditLogger.logEvent({
+        category: 'orders',
+        action: 'accepted',
+        userId: context.user._id.toString(),
+        entityId: order._id.toString(),
+        entityType: 'order'
+      });
+
+      return await Order.findById(order._id)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+    },
+
+    async cancelOrder(_, { _id, reason }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(_id);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findById(order.restaurant).lean();
+      if (!restaurant || restaurant.owner?.toString() !== context.user._id.toString()) {
+        throw new Error('You can only cancel orders for your restaurant');
+      }
+
+      // Only allow cancellation if order is pending or accepted
+      if (!['pending', 'accepted'].includes(order.orderStatus)) {
+        throw new Error('Order cannot be cancelled at this stage');
+      }
+
+      order.orderStatus = 'cancelled';
+      order.cancelledAt = new Date();
+      order.reason = reason;
+      order.isActive = false;
+      await order.save();
+
+      emitOrderUpdate(order._id.toString(), {
+        action: 'cancelled',
+        order
+      });
+
+      auditLogger.logEvent({
+        category: 'orders',
+        action: 'cancelled',
+        userId: context.user._id.toString(),
+        entityId: order._id.toString(),
+        entityType: 'order'
+      });
+
+      return await Order.findById(order._id)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+    },
+
+    async orderPickedUp(_, { _id }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(_id);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findById(order.restaurant).lean();
+      if (!restaurant || restaurant.owner?.toString() !== context.user._id.toString()) {
+        throw new Error('You can only update orders for your restaurant');
+      }
+
+      order.isPickedUp = true;
+      order.pickedAt = new Date();
+      if (order.orderStatus === 'ready') {
+        order.orderStatus = 'picked';
+      }
+      await order.save();
+
+      emitOrderUpdate(order._id.toString(), {
+        action: 'picked_up',
+        order
+      });
+
+      auditLogger.logEvent({
+        category: 'orders',
+        action: 'picked_up',
+        userId: context.user._id.toString(),
+        entityId: order._id.toString(),
+        entityType: 'order'
+      });
+
+      return await Order.findById(order._id)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+    },
+
+    async muteRing(_, { orderId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(orderId);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findById(order.restaurant).lean();
+      if (!restaurant || restaurant.owner?.toString() !== context.user._id.toString()) {
+        throw new Error('You can only mute rings for your restaurant orders');
+      }
+
+      order.isRinged = true;
+      await order.save();
+
+      return true;
     },
 
     async abortOrder(_, { id }, context) {
