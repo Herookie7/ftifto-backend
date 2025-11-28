@@ -97,7 +97,7 @@ The VSCode workspace (`.vscode/launch.json`) includes launch targets for each co
 | `LOG_LEVEL`              | Morgan log format (auto `combined` in production)                           |
 | `RATE_LIMIT_WINDOW_MS`   | Rate-limit window duration in ms (default 15 minutes)                       |
 | `RATE_LIMIT_MAX`         | Max requests per IP per window                                              |
-| `FCM_PROJECT_ID`         | Firebase project id for FCM push notifications                              |
+| `FCM_PROJECT_ID`         | Firebase project id for FCM push notifications (production: `tifto-prod`)   |
 | `FCM_CLIENT_EMAIL`       | Firebase service-account client email                                      |
 | `FCM_PRIVATE_KEY`        | Base64-encoded Firebase private key (raw `\n` string also supported)        |
 | `FCM_PRIVATE_KEY_BASE64` | Optional Base64-encoded private key override                                |

@@ -79,6 +79,10 @@ This document extracts all critical configuration data from the `ftifto-backend/
 | `FCM_PRIVATE_KEY` | Firebase private key (raw or base64) | `''` | `env.js` |
 | `FCM_PRIVATE_KEY_BASE64` | Firebase private key (base64 encoded) | `''` | `env.js` |
 
+**Production Configuration**:
+- **Project ID**: `tifto-prod` (Project Number: `253211113708`)
+- **Note**: Set `FCM_PROJECT_ID=tifto-prod` in your deployment environment (Render/Railway/etc.)
+
 **Processing**:
 - If `FCM_PRIVATE_KEY_BASE64` is set, decodes from base64
 - If `FCM_PRIVATE_KEY` is set, attempts base64 decode, falls back to raw string with `\n` replacement
