@@ -925,6 +925,28 @@ const resolvers = {
       };
     },
 
+    async restaurantCategories(_, { restaurantId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: restaurantId,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      const categories = await Category.find({ restaurant: restaurantId })
+        .populate('foods')
+        .sort({ order: 1 })
+        .lean();
+
+      return categories;
+    },
+
     async storeCurrentWithdrawRequest(_, { storeId }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
@@ -2288,28 +2310,6 @@ const resolvers = {
         message: 'Restaurant information updated successfully',
         data: restaurant
       };
-    },
-
-    async restaurantCategories(_, { restaurantId }, context) {
-      if (!context.user) {
-        throw new Error('Authentication required');
-      }
-
-      const restaurant = await Restaurant.findOne({ 
-        _id: restaurantId,
-        owner: context.user._id 
-      });
-
-      if (!restaurant) {
-        throw new Error('Restaurant not found or access denied');
-      }
-
-      const categories = await Category.find({ restaurant: restaurantId })
-        .populate('foods')
-        .sort({ order: 1 })
-        .lean();
-
-      return categories;
     },
 
     async createCategory(_, { restaurantId, title, description, image, order }, context) {
