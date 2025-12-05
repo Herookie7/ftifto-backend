@@ -547,6 +547,7 @@ const typeDefs = gql`
     # Product/Food queries
     popularFoodItems(restaurantId: String!): [Food]
     fetchCategoryDetailsByStoreIdForMobile(storeId: String!): [Category]
+    restaurantCategories(restaurantId: ID!): [Category]
 
     # Configuration
     configuration: Configuration
@@ -635,6 +636,13 @@ const typeDefs = gql`
     updateRiderLicenseDetails(id: String!, licenseDetails: LicenseDetailsInput): User
     updateRiderVehicleDetails(id: String!, vehicleDetails: VehicleDetailsInput): User
     updateRestaurantBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): UpdateRestaurantResponse
+    updateRestaurantInfo(id: String!, restaurantInput: RestaurantInfoInput!): UpdateRestaurantResponse
+    createCategory(restaurantId: ID!, title: String!, description: String, image: String, order: Int): Category
+    updateCategory(id: ID!, title: String, description: String, image: String, order: Int, isActive: Boolean): Category
+    deleteCategory(id: ID!): Boolean
+    createProduct(restaurantId: ID!, categoryId: ID, productInput: ProductInput!): Product
+    updateProduct(id: ID!, productInput: ProductInput!): Product
+    deleteProduct(id: ID!): Boolean
   }
 
   type Subscription {
@@ -749,6 +757,51 @@ const typeDefs = gql`
     accountNumber: String
     accountName: String
     accountCode: String
+  }
+
+  input RestaurantInfoInput {
+    name: String
+    address: String
+    phone: String
+    description: String
+    image: String
+    logo: String
+    deliveryTime: Int
+    minimumOrder: Float
+  }
+
+  input ProductInput {
+    title: String!
+    description: String
+    image: String
+    price: Float!
+    discountedPrice: Float
+    subCategory: String
+    isActive: Boolean
+    available: Boolean
+    isOutOfStock: Boolean
+    preparationTime: Int
+    variations: [VariationInput]
+    addons: [AddonInput]
+  }
+
+  type Product {
+    _id: ID
+    title: String
+    description: String
+    image: String
+    price: Float
+    discountedPrice: Float
+    subCategory: String
+    isActive: Boolean
+    available: Boolean
+    isOutOfStock: Boolean
+    preparationTime: Int
+    variations: [Variation]
+    addons: [Addon]
+    restaurant: ID
+    createdAt: Date
+    updatedAt: Date
   }
 
   type UpdateRestaurantResponse {

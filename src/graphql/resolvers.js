@@ -2255,6 +2255,255 @@ const resolvers = {
         message: 'Business details updated successfully',
         data: restaurant
       };
+    },
+
+    async updateRestaurantInfo(_, { id, restaurantInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: id,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      // Update allowed fields
+      if (restaurantInput.name !== undefined) restaurant.name = restaurantInput.name;
+      if (restaurantInput.address !== undefined) restaurant.address = restaurantInput.address;
+      if (restaurantInput.phone !== undefined) restaurant.phone = restaurantInput.phone;
+      if (restaurantInput.description !== undefined) restaurant.description = restaurantInput.description;
+      if (restaurantInput.image !== undefined) restaurant.image = restaurantInput.image;
+      if (restaurantInput.logo !== undefined) restaurant.logo = restaurantInput.logo;
+      if (restaurantInput.deliveryTime !== undefined) restaurant.deliveryTime = restaurantInput.deliveryTime;
+      if (restaurantInput.minimumOrder !== undefined) restaurant.minimumOrder = restaurantInput.minimumOrder;
+
+      await restaurant.save();
+
+      return {
+        success: true,
+        message: 'Restaurant information updated successfully',
+        data: restaurant
+      };
+    },
+
+    async restaurantCategories(_, { restaurantId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: restaurantId,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      const categories = await Category.find({ restaurant: restaurantId })
+        .populate('foods')
+        .sort({ order: 1 })
+        .lean();
+
+      return categories;
+    },
+
+    async createCategory(_, { restaurantId, title, description, image, order }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: restaurantId,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      const category = await Category.create({
+        restaurant: restaurantId,
+        title,
+        description,
+        image,
+        order: order || 0,
+        isActive: true
+      });
+
+      return category;
+    },
+
+    async updateCategory(_, { id, title, description, image, order, isActive }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const category = await Category.findById(id).populate('restaurant');
+      if (!category) {
+        throw new Error('Category not found');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: category.restaurant._id || category.restaurant,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Access denied');
+      }
+
+      if (title !== undefined) category.title = title;
+      if (description !== undefined) category.description = description;
+      if (image !== undefined) category.image = image;
+      if (order !== undefined) category.order = order;
+      if (isActive !== undefined) category.isActive = isActive;
+
+      await category.save();
+      return category;
+    },
+
+    async deleteCategory(_, { id }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const category = await Category.findById(id).populate('restaurant');
+      if (!category) {
+        throw new Error('Category not found');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: category.restaurant._id || category.restaurant,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Access denied');
+      }
+
+      // Delete all products in this category
+      await Product.deleteMany({ _id: { $in: category.foods } });
+      
+      // Remove category from restaurant
+      restaurant.categories = restaurant.categories.filter(
+        catId => catId.toString() !== id
+      );
+      await restaurant.save();
+
+      await Category.findByIdAndDelete(id);
+      return true;
+    },
+
+    async createProduct(_, { restaurantId, categoryId, productInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: restaurantId,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      const product = await Product.create({
+        restaurant: restaurantId,
+        title: productInput.title,
+        description: productInput.description,
+        image: productInput.image,
+        price: productInput.price,
+        discountedPrice: productInput.discountedPrice,
+        subCategory: productInput.subCategory,
+        isActive: productInput.isActive !== undefined ? productInput.isActive : true,
+        available: productInput.available !== undefined ? productInput.available : true,
+        isOutOfStock: productInput.isOutOfStock || false,
+        preparationTime: productInput.preparationTime || 15,
+        variations: productInput.variations || [],
+        addons: productInput.addons || []
+      });
+
+      // Add product to category if provided
+      if (categoryId) {
+        const category = await Category.findById(categoryId);
+        if (category && category.restaurant.toString() === restaurantId) {
+          category.foods.push(product._id);
+          await category.save();
+        }
+      }
+
+      return product;
+    },
+
+    async updateProduct(_, { id, productInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const product = await Product.findById(id).populate('restaurant');
+      if (!product) {
+        throw new Error('Product not found');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: product.restaurant._id || product.restaurant,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Access denied');
+      }
+
+      if (productInput.title !== undefined) product.title = productInput.title;
+      if (productInput.description !== undefined) product.description = productInput.description;
+      if (productInput.image !== undefined) product.image = productInput.image;
+      if (productInput.price !== undefined) product.price = productInput.price;
+      if (productInput.discountedPrice !== undefined) product.discountedPrice = productInput.discountedPrice;
+      if (productInput.subCategory !== undefined) product.subCategory = productInput.subCategory;
+      if (productInput.isActive !== undefined) product.isActive = productInput.isActive;
+      if (productInput.available !== undefined) product.available = productInput.available;
+      if (productInput.isOutOfStock !== undefined) product.isOutOfStock = productInput.isOutOfStock;
+      if (productInput.preparationTime !== undefined) product.preparationTime = productInput.preparationTime;
+      if (productInput.variations !== undefined) product.variations = productInput.variations;
+      if (productInput.addons !== undefined) product.addons = productInput.addons;
+
+      await product.save();
+      return product;
+    },
+
+    async deleteProduct(_, { id }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const product = await Product.findById(id).populate('restaurant');
+      if (!product) {
+        throw new Error('Product not found');
+      }
+
+      const restaurant = await Restaurant.findOne({ 
+        _id: product.restaurant._id || product.restaurant,
+        owner: context.user._id 
+      });
+
+      if (!restaurant) {
+        throw new Error('Access denied');
+      }
+
+      // Remove product from all categories
+      await Category.updateMany(
+        { foods: id },
+        { $pull: { foods: id } }
+      );
+
+      await Product.findByIdAndDelete(id);
+      return true;
     }
   },
 
