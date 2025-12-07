@@ -299,6 +299,7 @@ const typeDefs = gql`
     instructions: String
     isRinged: Boolean
     isRiderRinged: Boolean
+    zone: Zone
   }
 
   type Configuration {
@@ -641,9 +642,12 @@ const typeDefs = gql`
     _id: ID
     title: String
     message: String
+    body: String
+    navigateTo: String
     type: String
     userId: String
     isRead: Boolean
+    read: Boolean
     createdAt: Date
   }
 
@@ -671,6 +675,11 @@ const typeDefs = gql`
   }
 
   type DashboardUsersResponse {
+    usersCount: Int
+    vendorsCount: Int
+    restaurantsCount: Int
+    ridersCount: Int
+    # Legacy fields for backward compatibility
     total: Int
     active: Int
     inactive: Int
@@ -679,16 +688,30 @@ const typeDefs = gql`
     newThisMonth: Int
   }
 
+  type DashboardOrdersByTypeItem {
+    label: String
+    value: Int
+  }
+
+  type DashboardSalesByTypeItem {
+    label: String
+    value: Float
+  }
+
   type DashboardOrdersByTypeResponse {
     delivery: Int
     pickup: Int
     total: Int
+    # Array format for frontend
+    items: [DashboardOrdersByTypeItem]
   }
 
   type DashboardSalesByTypeResponse {
     delivery: Float
     pickup: Float
     total: Float
+    # Array format for frontend
+    items: [DashboardSalesByTypeItem]
   }
 
   type LicenseDetails {
@@ -710,6 +733,11 @@ const typeDefs = gql`
     page: Int
     limit: Int
     totalPages: Int
+  }
+
+  type ActiveOrdersResponse {
+    totalCount: Int
+    orders: [Order]
   }
 
   type SupportTicket {
@@ -868,8 +896,8 @@ const typeDefs = gql`
     webNotifications(userId: String, pagination: PaginationInput): [WebNotification]
     getDashboardUsers: DashboardUsersResponse
     getDashboardUsersByYear(year: Int): DashboardUsersResponse
-    getDashboardOrdersByType(dateFilter: DateFilter): DashboardOrdersByTypeResponse
-    getDashboardSalesByType(dateFilter: DateFilter): DashboardSalesByTypeResponse
+    getDashboardOrdersByType(dateFilter: DateFilter): [DashboardOrdersByTypeItem]
+    getDashboardSalesByType(dateFilter: DateFilter): [DashboardSalesByTypeItem]
     vendors(filters: FiltersInput): [User]
     riders(filters: FiltersInput): [User]
     availableRiders(zoneId: String): [User]
@@ -880,7 +908,7 @@ const typeDefs = gql`
     restaurantByOwner(ownerId: String!): [Restaurant]
     getVendor(vendorId: String!): User
     allOrdersWithoutPagination(filters: FiltersInput): [Order]
-    getActiveOrders: [Order]
+    getActiveOrders(restaurantId: ID, page: Int, rowsPerPage: Int, actions: [String], search: String): ActiveOrdersResponse
     ordersByRestId(restaurantId: String!, filters: FiltersInput): [Order]
     coupons: [Coupon]
     tips: Tipping
@@ -961,6 +989,9 @@ const typeDefs = gql`
     createProduct(restaurantId: ID!, categoryId: ID, productInput: ProductInput!): Product
     updateProduct(id: ID!, productInput: ProductInput!): Product
     deleteProduct(id: ID!): Boolean
+    
+    # Admin app mutations
+    markWebNotificationsAsRead: [WebNotification]
   }
 
   type Subscription {

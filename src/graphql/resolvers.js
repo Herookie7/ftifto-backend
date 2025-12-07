@@ -43,6 +43,41 @@ const JSONScalar = new GraphQLScalarType({
 
 const resolvers = {
   JSON: JSONScalar,
+  WebNotification: {
+    // Map fields for backward compatibility
+    body: (parent) => parent.body || parent.message || '',
+    read: (parent) => parent.read !== undefined ? parent.read : parent.isRead || false,
+    navigateTo: (parent) => {
+      // Derive navigateTo from type and related IDs
+      if (parent.navigateTo) return parent.navigateTo;
+      if (parent.type === 'order' && parent.orderId) return `/orders/${parent.orderId}`;
+      if (parent.type === 'restaurant' && parent.restaurantId) return `/restaurants/${parent.restaurantId}`;
+      return null;
+    }
+  },
+  Order: {
+    // Resolve zone from restaurant or by zone string/id
+    async zone(parent) {
+      if (parent.zone) {
+        // If zone is already populated, return it
+        if (typeof parent.zone === 'object') return parent.zone;
+        // If zone is a string ID, look it up
+        if (typeof parent.zone === 'string') {
+          return await Zone.findById(parent.zone).lean();
+        }
+      }
+      // Try to get zone from restaurant
+      if (parent.restaurant) {
+        const restaurant = typeof parent.restaurant === 'object' 
+          ? parent.restaurant 
+          : await Restaurant.findById(parent.restaurant).populate('zone').lean();
+        if (restaurant?.zone) {
+          return typeof restaurant.zone === 'object' ? restaurant.zone : await Zone.findById(restaurant.zone).lean();
+        }
+      }
+      return null;
+    }
+  },
   Query: {
     // Nearby restaurants with full details
     async nearByRestaurants(_, { latitude, longitude, shopType }) {
@@ -1191,6 +1226,23 @@ const resolvers = {
     // Admin app queries
     async webNotifications(_, { userId, pagination }, context) {
       // Placeholder - implement notification model if exists
+      // For now, return empty array with proper structure
+      // When Notification model is implemented, map fields:
+      // message -> body, isRead -> read, add navigateTo based on type
+      const targetUserId = userId || context?.user?._id?.toString();
+      if (!targetUserId) {
+        return [];
+      }
+      
+      // Placeholder: return empty array
+      // TODO: Implement with actual Notification model
+      // Example structure:
+      // return notifications.map(n => ({
+      //   ...n,
+      //   body: n.message,
+      //   read: n.isRead,
+      //   navigateTo: n.type === 'order' ? `/orders/${n.orderId}` : null
+      // }));
       return [];
     },
 
@@ -1202,6 +1254,13 @@ const resolvers = {
       const monthAgo = new Date(today);
       monthAgo.setMonth(monthAgo.getMonth() - 1);
 
+      // Count by role
+      const usersCount = await User.countDocuments({ role: 'customer' });
+      const vendorsCount = await User.countDocuments({ role: 'seller' });
+      const restaurantsCount = await Restaurant.countDocuments({ isActive: true });
+      const ridersCount = await User.countDocuments({ role: 'rider' });
+
+      // Legacy fields for backward compatibility
       const total = await User.countDocuments();
       const active = await User.countDocuments({ isActive: true });
       const inactive = await User.countDocuments({ isActive: false });
@@ -1210,6 +1269,10 @@ const resolvers = {
       const newThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo } });
 
       return {
+        usersCount,
+        vendorsCount,
+        restaurantsCount,
+        ridersCount,
         total,
         active,
         inactive,
@@ -1220,17 +1283,50 @@ const resolvers = {
     },
 
     async getDashboardUsersByYear(_, { year }) {
-      const startDate = new Date(year || new Date().getFullYear(), 0, 1);
-      const endDate = new Date(year || new Date().getFullYear(), 11, 31, 23, 59, 59);
+      const targetYear = year || new Date().getFullYear();
+      const usersCount = [];
+      const vendorsCount = [];
+      const restaurantsCount = [];
+      const ridersCount = [];
 
+      // Aggregate by month for the year
+      for (let month = 0; month < 12; month++) {
+        const monthStart = new Date(targetYear, month, 1);
+        const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59);
+
+        usersCount.push(await User.countDocuments({ 
+          role: 'customer', 
+          createdAt: { $gte: monthStart, $lte: monthEnd } 
+        }));
+        vendorsCount.push(await User.countDocuments({ 
+          role: 'seller', 
+          createdAt: { $gte: monthStart, $lte: monthEnd } 
+        }));
+        restaurantsCount.push(await Restaurant.countDocuments({ 
+          isActive: true, 
+          createdAt: { $gte: monthStart, $lte: monthEnd } 
+        }));
+        ridersCount.push(await User.countDocuments({ 
+          role: 'rider', 
+          createdAt: { $gte: monthStart, $lte: monthEnd } 
+        }));
+      }
+
+      // Legacy fields for backward compatibility
+      const startDate = new Date(targetYear, 0, 1);
+      const endDate = new Date(targetYear, 11, 31, 23, 59, 59);
       const total = await User.countDocuments({ createdAt: { $gte: startDate, $lte: endDate } });
       const active = await User.countDocuments({ isActive: true, createdAt: { $gte: startDate, $lte: endDate } });
       const inactive = await User.countDocuments({ isActive: false, createdAt: { $gte: startDate, $lte: endDate } });
-      const newToday = 0; // Calculate based on year if needed
+      const newToday = 0;
       const newThisWeek = 0;
       const newThisMonth = 0;
 
       return {
+        usersCount,
+        vendorsCount,
+        restaurantsCount,
+        ridersCount,
         total,
         active,
         inactive,
@@ -1254,11 +1350,12 @@ const resolvers = {
       const pickup = await Order.countDocuments({ ...query, isPickedUp: true });
       const total = await Order.countDocuments(query);
 
-      return {
-        delivery,
-        pickup,
-        total
-      };
+      // Return array format for frontend
+      return [
+        { label: 'Delivery', value: delivery },
+        { label: 'Pickup', value: pickup },
+        { label: 'Total', value: total }
+      ];
     },
 
     async getDashboardSalesByType(_, { dateFilter }) {
@@ -1278,11 +1375,12 @@ const resolvers = {
       const pickup = pickupOrders.reduce((sum, order) => sum + (order.orderAmount || 0), 0);
       const total = delivery + pickup;
 
-      return {
-        delivery,
-        pickup,
-        total
-      };
+      // Return array format for frontend
+      return [
+        { label: 'Delivery', value: delivery },
+        { label: 'Pickup', value: pickup },
+        { label: 'Total', value: total }
+      ];
     },
 
     async vendors(_, { filters }) {
@@ -1435,16 +1533,39 @@ const resolvers = {
         .lean();
     },
 
-    async getActiveOrders() {
-      return await Order.find({
+    async getActiveOrders(_, { restaurantId, page, rowsPerPage, actions, search }) {
+      const query = {
         isActive: true,
-        orderStatus: { $in: ['pending', 'accepted', 'preparing', 'ready', 'picked', 'enroute'] }
-      })
-        .populate('restaurant')
-        .populate('customer')
-        .populate('rider')
-        .sort({ createdAt: -1 })
-        .lean();
+        orderStatus: { $in: actions && actions.length > 0 ? actions : ['pending', 'accepted', 'preparing', 'ready', 'picked', 'enroute'] }
+      };
+
+      if (restaurantId) {
+        query.restaurant = restaurantId;
+      }
+
+      if (search) {
+        query.orderId = { $regex: search, $options: 'i' };
+      }
+
+      const limit = rowsPerPage || 10;
+      const skip = page ? (page - 1) * limit : 0;
+
+      const [orders, totalCount] = await Promise.all([
+        Order.find(query)
+          .populate('restaurant')
+          .populate('customer', 'name phone')
+          .populate('rider')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Order.countDocuments(query)
+      ]);
+
+      return {
+        totalCount,
+        orders
+      };
     },
 
     async ordersByRestId(_, { restaurantId, filters }) {
@@ -3199,6 +3320,34 @@ const resolvers = {
 
       await Product.findByIdAndDelete(id);
       return true;
+    },
+
+    // Admin app mutations
+    async markWebNotificationsAsRead(_, __, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const userId = context.user._id.toString();
+      
+      // Placeholder - implement with actual Notification model
+      // TODO: When Notification model is implemented:
+      // await Notification.updateMany(
+      //   { userId, isRead: false },
+      //   { $set: { isRead: true } }
+      // );
+      // const notifications = await Notification.find({ userId })
+      //   .sort({ createdAt: -1 })
+      //   .lean();
+      // return notifications.map(n => ({
+      //   ...n,
+      //   body: n.message,
+      //   read: n.isRead,
+      //   navigateTo: n.type === 'order' ? `/orders/${n.orderId}` : null
+      // }));
+
+      // Return empty array for now
+      return [];
     }
   },
 
