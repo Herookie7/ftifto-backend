@@ -1552,10 +1552,10 @@ const resolvers = {
 
       const [orders, totalCount] = await Promise.all([
         Order.find(query)
-          .populate('restaurant')
+        .populate('restaurant')
           .populate('customer', 'name phone')
-          .populate('rider')
-          .sort({ createdAt: -1 })
+        .populate('rider')
+        .sort({ createdAt: -1 })
           .skip(skip)
           .limit(limit)
           .lean(),
