@@ -133,6 +133,11 @@ const typeDefs = gql`
     totalWalletAmount: Float
     withdrawnWalletAmount: Float
     currentWalletAmount: Float
+    # Admin app fields
+    unique_restaurant_id: String
+    deliveryInfo: DeliveryInfo
+    city: String
+    postCode: String
   }
 
   type RestaurantPreview {
@@ -218,6 +223,21 @@ const typeDefs = gql`
     currentWalletAmount: Float
     totalWalletAmount: Float
     withdrawnWalletAmount: Float
+    # Admin app fields
+    status: String
+    lastLogin: Date
+    notes: String
+    username: String
+    unique_id: String
+    plainPassword: String
+    vehicleType: String
+    assigned: Boolean
+    permissions: [String]
+    zone: Zone
+    restaurants: [Restaurant]
+    bussinessDetails: BussinessDetails
+    licenseDetails: LicenseDetails
+    vehicleDetails: VehicleDetails
   }
 
   type Address {
@@ -497,29 +517,85 @@ const typeDefs = gql`
 
   type GrandTotalEarnings {
     storeTotal: Float
+    platformTotal: Float
+    riderTotal: Float
   }
 
   type EarningsDetail {
     storeEarnings: StoreEarnings
+    # Admin app fields
+    _id: ID
+    orderId: String
+    orderType: String
+    paymentMethod: String
+    createdAt: Date
+    updatedAt: Date
+    platformEarnings: PlatformEarnings
+    riderEarnings: RiderEarnings
+  }
+
+  type PlatformEarnings {
+    marketplaceCommission: Float
+    deliveryCommission: Float
+    tax: Float
+    platformFee: Float
+    totalEarnings: Float
+  }
+
+  type RiderEarnings {
+    riderId: String
+    deliveryFee: Float
+    tip: Float
+    totalEarnings: Float
+    rider: User
   }
 
   type StoreEarnings {
     totalEarnings: Float
+    storeId: String
+    orderAmount: Float
+    store: Restaurant
   }
 
   type EarningsResponse {
     data: EarningsData
     message: String
+    success: Boolean
+    pagination: PaginationInfo
   }
 
   type TransactionHistoryData {
     status: String
     amountTransferred: Float
     createdAt: Date
+    # Admin app fields
+    _id: ID
+    amountCurrency: String
+    transactionId: String
+    userType: String
+    userId: String
+    toBank: ToBankInfo
+    rider: User
+    store: Restaurant
+  }
+
+  type ToBankInfo {
+    bankName: String
+    accountNumber: String
+    accountName: String
+    accountCode: String
   }
 
   type TransactionHistoryResponse {
     data: [TransactionHistoryData]
+    pagination: PaginationInfo
+  }
+
+  type PaginationInfo {
+    page: Int
+    limit: Int
+    total: Int
+    totalPages: Int
   }
 
   type WithdrawRequest {
@@ -529,6 +605,140 @@ const typeDefs = gql`
     createdAt: Date
     userId: String
     storeId: String
+    # Admin app fields
+    requestId: String
+    requestTime: Date
+    rider: User
+    store: Restaurant
+  }
+
+  type WithdrawRequestResponse {
+    success: Boolean
+    message: String
+    data: [WithdrawRequest]
+  }
+
+  type DeliveryInfo {
+    minDeliveryFee: Float
+    deliveryDistance: Float
+    deliveryFee: Float
+  }
+
+  type Notification {
+    _id: ID
+    title: String
+    message: String
+    type: String
+    userId: String
+    restaurantId: String
+    orderId: String
+    isRead: Boolean
+    createdAt: Date
+    updatedAt: Date
+  }
+
+  type WebNotification {
+    _id: ID
+    title: String
+    message: String
+    type: String
+    userId: String
+    isRead: Boolean
+    createdAt: Date
+  }
+
+  type AuditLog {
+    _id: ID
+    userId: String
+    action: String
+    module: String
+    screenPath: String
+    details: String
+    createdAt: Date
+    user: User
+  }
+
+  type AuditLogResponse {
+    data: [AuditLog]
+    total: Int
+  }
+
+  type Tipping {
+    _id: ID
+    enabled: Boolean
+    amounts: [Float]
+    defaultAmount: Float
+  }
+
+  type DashboardUsersResponse {
+    total: Int
+    active: Int
+    inactive: Int
+    newToday: Int
+    newThisWeek: Int
+    newThisMonth: Int
+  }
+
+  type DashboardOrdersByTypeResponse {
+    delivery: Int
+    pickup: Int
+    total: Int
+  }
+
+  type DashboardSalesByTypeResponse {
+    delivery: Float
+    pickup: Float
+    total: Float
+  }
+
+  type LicenseDetails {
+    licenseNumber: String
+    expiryDate: String
+    licenseImage: String
+  }
+
+  type VehicleDetails {
+    vehicleType: String
+    vehicleNumber: String
+    vehicleModel: String
+    vehicleImage: String
+  }
+
+  type RestaurantPaginatedResponse {
+    data: [Restaurant]
+    total: Int
+    page: Int
+    limit: Int
+    totalPages: Int
+  }
+
+  type SupportTicket {
+    _id: ID
+    userId: String
+    subject: String
+    status: String
+    priority: String
+    createdAt: Date
+    updatedAt: Date
+    user: User
+    latestMessage: SupportTicketMessage
+  }
+
+  type SupportTicketMessage {
+    _id: ID
+    ticketId: String
+    message: String
+    senderId: String
+    senderType: String
+    createdAt: Date
+    sender: User
+  }
+
+  type RestaurantDeliveryZoneInfo {
+    restaurantId: String
+    deliveryBounds: Location
+    zone: Zone
+    deliveryInfo: DeliveryInfo
   }
 
   type StoreEarningsGraphData {
@@ -575,11 +785,26 @@ const typeDefs = gql`
   input PaginationInput {
     page: Int
     limit: Int
+    pageSize: Int
+    pageNo: Int
   }
 
   input DateFilter {
     startDate: String
     endDate: String
+    starting_date: String
+    ending_date: String
+  }
+
+  input FiltersInput {
+    search: String
+    status: String
+    userType: String
+    isActive: Boolean
+    page: Int
+    limit: Int
+    pageSize: Int
+    pageNo: Int
   }
 
   input TimingsInput {
@@ -633,11 +858,43 @@ const typeDefs = gql`
     # Seller/Restaurant queries
     restaurantOrders: [Order]
     lastOrderCreds: LastOrderCredsResponse
-    earnings(userType: UserTypeEnum, userId: String, orderType: OrderTypeEnum, paymentMethod: PaymentMethodEnum, pagination: PaginationInput, dateFilter: DateFilter): EarningsResponse
-    transactionHistory(userType: UserTypeEnum, userId: String): TransactionHistoryResponse
+    earnings(userType: UserTypeEnum, userId: String, orderType: OrderTypeEnum, paymentMethod: PaymentMethodEnum, pagination: PaginationInput, dateFilter: DateFilter, search: String): EarningsResponse
+    transactionHistory(userType: UserTypeEnum, userId: String, search: String, pagination: PaginationInput, dateFilter: DateFilter): TransactionHistoryResponse
     storeCurrentWithdrawRequest(storeId: String): WithdrawRequest
     storeEarningsGraph(storeId: ID!, page: Int, limit: Int, startDate: String, endDate: String): StoreEarningsGraphData
     chat(order: String!): [ChatMessage]
+    
+    # Admin app queries
+    webNotifications(userId: String, pagination: PaginationInput): [WebNotification]
+    getDashboardUsers: DashboardUsersResponse
+    getDashboardUsersByYear(year: Int): DashboardUsersResponse
+    getDashboardOrdersByType(dateFilter: DateFilter): DashboardOrdersByTypeResponse
+    getDashboardSalesByType(dateFilter: DateFilter): DashboardSalesByTypeResponse
+    vendors(filters: FiltersInput): [User]
+    riders(filters: FiltersInput): [User]
+    availableRiders(zoneId: String): [User]
+    ridersByZone(zoneId: String!): [User]
+    staffs(filters: FiltersInput): [User]
+    restaurants(filters: FiltersInput): [Restaurant]
+    restaurantsPaginated(filters: FiltersInput): RestaurantPaginatedResponse
+    restaurantByOwner(ownerId: String!): [Restaurant]
+    getVendor(vendorId: String!): User
+    allOrdersWithoutPagination(filters: FiltersInput): [Order]
+    getActiveOrders: [Order]
+    ordersByRestId(restaurantId: String!, filters: FiltersInput): [Order]
+    coupons: [Coupon]
+    tips: Tipping
+    notifications(filters: FiltersInput): [Notification]
+    auditLogs(filters: FiltersInput): AuditLogResponse
+    withdrawRequests(filters: FiltersInput): WithdrawRequestResponse
+    getTicketUsers(filters: FiltersInput): [User]
+    getTicketUsersWithLatest(filters: FiltersInput): [User]
+    getSingleUserSupportTickets(userId: String!): [SupportTicket]
+    getSingleSupportTicket(ticketId: String!): SupportTicket
+    getTicketMessages(ticketId: String!): [SupportTicketMessage]
+    getClonedRestaurants: [Restaurant]
+    getClonedRestaurantsPaginated(filters: FiltersInput): RestaurantPaginatedResponse
+    getRestaurantDeliveryZoneInfo(restaurantId: String!): RestaurantDeliveryZoneInfo
   }
 
   type Mutation {

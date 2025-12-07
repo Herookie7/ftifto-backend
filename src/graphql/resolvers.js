@@ -835,7 +835,7 @@ const resolvers = {
       };
     },
 
-    async earnings(_, { userType, userId, orderType, paymentMethod, pagination, dateFilter }, context) {
+    async earnings(_, { userType, userId, orderType, paymentMethod, pagination, dateFilter, search }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -845,10 +845,17 @@ const resolvers = {
       if (!restaurant) {
         return {
           data: {
-            grandTotalEarnings: { storeTotal: 0 },
+            grandTotalEarnings: { storeTotal: 0, platformTotal: 0, riderTotal: 0 },
             earnings: []
           },
-          message: 'No restaurant found'
+          message: 'No restaurant found',
+          success: false,
+          pagination: {
+            page: 1,
+            limit: 10,
+            total: 0,
+            totalPages: 0
+          }
         };
       }
 
@@ -860,43 +867,107 @@ const resolvers = {
       }
       
       if (paymentMethod) {
-        orderQuery.paymentMethod = paymentMethod;
+        orderQuery.paymentMethod = paymentMethod.toLowerCase();
       }
 
-      if (dateFilter?.startDate || dateFilter?.endDate) {
+      if (search) {
+        orderQuery.$or = [
+          { orderId: { $regex: search, $options: 'i' } }
+        ];
+      }
+
+      if (dateFilter?.startDate || dateFilter?.endDate || dateFilter?.starting_date || dateFilter?.ending_date) {
         orderQuery.createdAt = {};
-        if (dateFilter.startDate) {
-          orderQuery.createdAt.$gte = new Date(dateFilter.startDate);
-        }
-        if (dateFilter.endDate) {
-          orderQuery.createdAt.$lte = new Date(dateFilter.endDate);
-        }
+        const startDate = dateFilter.startDate || dateFilter.starting_date;
+        const endDate = dateFilter.endDate || dateFilter.ending_date;
+        if (startDate) orderQuery.createdAt.$gte = new Date(startDate);
+        if (endDate) orderQuery.createdAt.$lte = new Date(endDate);
       }
 
-      const orders = await Order.find(orderQuery).lean();
+      const page = pagination?.page || pagination?.pageNo || 1;
+      const limit = pagination?.limit || pagination?.pageSize || 10;
+      const skip = (page - 1) * limit;
+
+      const orders = await Order.find(orderQuery)
+        .populate('rider')
+        .skip(skip)
+        .limit(limit)
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const total = await Order.countDocuments(orderQuery);
       
-      // Calculate total earnings (orderAmount - commission)
+      // Calculate earnings
       const totalEarnings = orders.reduce((sum, order) => {
         const commission = (order.orderAmount * (restaurant.commissionRate || 0)) / 100;
         return sum + (order.orderAmount - commission);
       }, 0);
 
+      const platformTotal = orders.reduce((sum, order) => {
+        const commission = (order.orderAmount * (restaurant.commissionRate || 0)) / 100;
+        return sum + commission;
+      }, 0);
+
+      const riderTotal = orders.reduce((sum, order) => {
+        return sum + (order.deliveryCharges || 0) + (order.tipping || 0);
+      }, 0);
+
+      const earnings = orders.map(order => {
+        const commission = (order.orderAmount * (restaurant.commissionRate || 0)) / 100;
+        const storeEarnings = order.orderAmount - commission;
+        const riderEarnings = (order.deliveryCharges || 0) + (order.tipping || 0);
+
+        return {
+          _id: order._id.toString(),
+          orderId: order.orderId || '',
+          orderType: order.isPickedUp ? 'PICKUP' : 'DELIVERY',
+          paymentMethod: order.paymentMethod?.toUpperCase() || 'CASH',
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          platformEarnings: {
+            marketplaceCommission: commission,
+            deliveryCommission: 0,
+            tax: order.taxationAmount || 0,
+            platformFee: 0,
+            totalEarnings: commission
+          },
+          riderEarnings: {
+            riderId: order.rider?._id?.toString() || null,
+            deliveryFee: order.deliveryCharges || 0,
+            tip: order.tipping || 0,
+            totalEarnings: riderEarnings,
+            rider: order.rider || null
+          },
+          storeEarnings: {
+            totalEarnings: storeEarnings,
+            storeId: restaurant._id.toString(),
+            orderAmount: order.orderAmount,
+            store: restaurant
+          }
+        };
+      });
+
       return {
         data: {
           grandTotalEarnings: {
-            storeTotal: totalEarnings
+            storeTotal: totalEarnings,
+            platformTotal,
+            riderTotal
           },
-          earnings: [{
-            storeEarnings: {
-              totalEarnings: totalEarnings
-            }
-          }]
+          earnings
         },
-        message: 'Success'
+        message: 'Success',
+        success: true,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
       };
     },
 
-    async transactionHistory(_, { userType, userId }, context) {
+    async transactionHistory(_, { userType, userId, search, pagination, dateFilter }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -904,24 +975,78 @@ const resolvers = {
       // Get restaurant owned by the authenticated user
       const restaurant = await Restaurant.findOne({ owner: context.user._id }).lean();
       if (!restaurant) {
-        return { data: [] };
+        return { 
+          data: [],
+          pagination: {
+            page: 1,
+            limit: 10,
+            total: 0,
+            totalPages: 0
+          }
+        };
       }
 
-      // Get orders with payment status
-      const orders = await Order.find({ 
+      // Build query
+      const query = { 
         restaurant: restaurant._id, 
         isActive: true,
         paymentStatus: 'paid'
-      })
+      };
+
+      if (search) {
+        query.$or = [
+          { orderId: { $regex: search, $options: 'i' } }
+        ];
+      }
+
+      if (dateFilter?.startDate || dateFilter?.endDate || dateFilter?.starting_date || dateFilter?.ending_date) {
+        query.createdAt = {};
+        const startDate = dateFilter.startDate || dateFilter.starting_date;
+        const endDate = dateFilter.endDate || dateFilter.ending_date;
+        if (startDate) query.createdAt.$gte = new Date(startDate);
+        if (endDate) query.createdAt.$lte = new Date(endDate);
+      }
+
+      const page = pagination?.page || pagination?.pageNo || 1;
+      const limit = pagination?.limit || pagination?.pageSize || 10;
+      const skip = (page - 1) * limit;
+
+      // Get orders with payment status
+      const orders = await Order.find(query)
+        .populate('rider')
+        .populate('restaurant')
         .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
         .lean();
+
+      const total = await Order.countDocuments(query);
 
       return {
         data: orders.map(order => ({
-          status: order.paymentStatus || 'pending',
+          _id: order._id.toString(),
+          status: order.paymentStatus || 'paid',
           amountTransferred: order.orderAmount,
+          amountCurrency: 'USD', // Default currency
+          transactionId: order.orderId || order._id.toString(),
+          userType: 'SELLER',
+          userId: context.user._id.toString(),
+          toBank: restaurant.bussinessDetails ? {
+            bankName: restaurant.bussinessDetails.bankName || '',
+            accountNumber: restaurant.bussinessDetails.accountNumber || '',
+            accountName: restaurant.bussinessDetails.accountName || '',
+            accountCode: restaurant.bussinessDetails.accountCode || ''
+          } : null,
+          rider: order.rider || null,
+          store: order.restaurant || null,
           createdAt: order.createdAt
-        }))
+        })),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
       };
     },
 
@@ -1061,6 +1186,383 @@ const resolvers = {
       // Placeholder - return empty array for now
       // In production, implement actual chat message storage
       return [];
+    },
+
+    // Admin app queries
+    async webNotifications(_, { userId, pagination }, context) {
+      // Placeholder - implement notification model if exists
+      return [];
+    },
+
+    async getDashboardUsers() {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const monthAgo = new Date(today);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+      const total = await User.countDocuments();
+      const active = await User.countDocuments({ isActive: true });
+      const inactive = await User.countDocuments({ isActive: false });
+      const newToday = await User.countDocuments({ createdAt: { $gte: today } });
+      const newThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo } });
+      const newThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo } });
+
+      return {
+        total,
+        active,
+        inactive,
+        newToday,
+        newThisWeek,
+        newThisMonth
+      };
+    },
+
+    async getDashboardUsersByYear(_, { year }) {
+      const startDate = new Date(year || new Date().getFullYear(), 0, 1);
+      const endDate = new Date(year || new Date().getFullYear(), 11, 31, 23, 59, 59);
+
+      const total = await User.countDocuments({ createdAt: { $gte: startDate, $lte: endDate } });
+      const active = await User.countDocuments({ isActive: true, createdAt: { $gte: startDate, $lte: endDate } });
+      const inactive = await User.countDocuments({ isActive: false, createdAt: { $gte: startDate, $lte: endDate } });
+      const newToday = 0; // Calculate based on year if needed
+      const newThisWeek = 0;
+      const newThisMonth = 0;
+
+      return {
+        total,
+        active,
+        inactive,
+        newToday,
+        newThisWeek,
+        newThisMonth
+      };
+    },
+
+    async getDashboardOrdersByType(_, { dateFilter }) {
+      const query = { isActive: true };
+      if (dateFilter?.startDate || dateFilter?.endDate || dateFilter?.starting_date || dateFilter?.ending_date) {
+        query.createdAt = {};
+        const startDate = dateFilter.startDate || dateFilter.starting_date;
+        const endDate = dateFilter.endDate || dateFilter.ending_date;
+        if (startDate) query.createdAt.$gte = new Date(startDate);
+        if (endDate) query.createdAt.$lte = new Date(endDate);
+      }
+
+      const delivery = await Order.countDocuments({ ...query, isPickedUp: false });
+      const pickup = await Order.countDocuments({ ...query, isPickedUp: true });
+      const total = await Order.countDocuments(query);
+
+      return {
+        delivery,
+        pickup,
+        total
+      };
+    },
+
+    async getDashboardSalesByType(_, { dateFilter }) {
+      const query = { isActive: true, paymentStatus: 'paid' };
+      if (dateFilter?.startDate || dateFilter?.endDate || dateFilter?.starting_date || dateFilter?.ending_date) {
+        query.createdAt = {};
+        const startDate = dateFilter.startDate || dateFilter.starting_date;
+        const endDate = dateFilter.endDate || dateFilter.ending_date;
+        if (startDate) query.createdAt.$gte = new Date(startDate);
+        if (endDate) query.createdAt.$lte = new Date(endDate);
+      }
+
+      const deliveryOrders = await Order.find({ ...query, isPickedUp: false }).lean();
+      const pickupOrders = await Order.find({ ...query, isPickedUp: true }).lean();
+
+      const delivery = deliveryOrders.reduce((sum, order) => sum + (order.orderAmount || 0), 0);
+      const pickup = pickupOrders.reduce((sum, order) => sum + (order.orderAmount || 0), 0);
+      const total = delivery + pickup;
+
+      return {
+        delivery,
+        pickup,
+        total
+      };
+    },
+
+    async vendors(_, { filters }) {
+      const query = { role: 'seller' };
+      if (filters?.search) {
+        query.$or = [
+          { name: { $regex: filters.search, $options: 'i' } },
+          { email: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+      if (filters?.isActive !== undefined) {
+        query.isActive = filters.isActive;
+      }
+
+      const vendors = await User.find(query)
+        .populate('restaurants')
+        .lean();
+
+      return vendors;
+    },
+
+    async riders(_, { filters }) {
+      const query = { role: 'rider' };
+      if (filters?.search) {
+        query.$or = [
+          { name: { $regex: filters.search, $options: 'i' } },
+          { email: { $regex: filters.search, $options: 'i' } },
+          { phone: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+      if (filters?.isActive !== undefined) {
+        query.isActive = filters.isActive;
+      }
+
+      return await User.find(query).lean();
+    },
+
+    async availableRiders(_, { zoneId }) {
+      const query = { role: 'rider', isActive: true, 'riderProfile.available': true };
+      if (zoneId) {
+        query.zone = zoneId;
+      }
+      return await User.find(query).lean();
+    },
+
+    async ridersByZone(_, { zoneId }) {
+      return await User.find({ role: 'rider', zone: zoneId }).lean();
+    },
+
+    async staffs(_, { filters }) {
+      const query = { role: { $in: ['admin', 'staff'] } };
+      if (filters?.search) {
+        query.$or = [
+          { name: { $regex: filters.search, $options: 'i' } },
+          { email: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+      if (filters?.isActive !== undefined) {
+        query.isActive = filters.isActive;
+      }
+
+      return await User.find(query).lean();
+    },
+
+    async restaurants(_, { filters }) {
+      const query = {};
+      if (filters?.search) {
+        query.$or = [
+          { name: { $regex: filters.search, $options: 'i' } },
+          { address: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+      if (filters?.isActive !== undefined) {
+        query.isActive = filters.isActive;
+      }
+
+      return await Restaurant.find(query)
+        .populate('owner')
+        .populate('zone')
+        .lean();
+    },
+
+    async restaurantsPaginated(_, { filters }) {
+      const query = {};
+      if (filters?.search) {
+        query.$or = [
+          { name: { $regex: filters.search, $options: 'i' } },
+          { address: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+      if (filters?.isActive !== undefined) {
+        query.isActive = filters.isActive;
+      }
+
+      const page = filters?.page || filters?.pageNo || 1;
+      const limit = filters?.limit || filters?.pageSize || 10;
+      const skip = (page - 1) * limit;
+
+      const data = await Restaurant.find(query)
+        .populate('owner')
+        .populate('zone')
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const total = await Restaurant.countDocuments(query);
+
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      };
+    },
+
+    async restaurantByOwner(_, { ownerId }) {
+      return await Restaurant.find({ owner: ownerId })
+        .populate('owner')
+        .populate('zone')
+        .lean();
+    },
+
+    async getVendor(_, { vendorId }) {
+      const vendor = await User.findById(vendorId)
+        .populate('restaurants')
+        .lean();
+      if (!vendor || vendor.role !== 'seller') {
+        throw new Error('Vendor not found');
+      }
+      return vendor;
+    },
+
+    async allOrdersWithoutPagination(_, { filters }) {
+      const query = { isActive: true };
+      if (filters?.search) {
+        query.$or = [
+          { orderId: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+      if (filters?.status) {
+        query.orderStatus = filters.status;
+      }
+
+      return await Order.find(query)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .sort({ createdAt: -1 })
+        .lean();
+    },
+
+    async getActiveOrders() {
+      return await Order.find({
+        isActive: true,
+        orderStatus: { $in: ['pending', 'accepted', 'preparing', 'ready', 'picked', 'enroute'] }
+      })
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .sort({ createdAt: -1 })
+        .lean();
+    },
+
+    async ordersByRestId(_, { restaurantId, filters }) {
+      const query = { restaurant: restaurantId, isActive: true };
+      if (filters?.search) {
+        query.$or = [
+          { orderId: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+      if (filters?.status) {
+        query.orderStatus = filters.status;
+      }
+
+      return await Order.find(query)
+        .populate('customer')
+        .populate('rider')
+        .sort({ createdAt: -1 })
+        .lean();
+    },
+
+    async coupons() {
+      // Placeholder - implement Coupon model if exists
+      return [];
+    },
+
+    async tips() {
+      // Placeholder - implement Tipping configuration if exists
+      return {
+        _id: 'tips',
+        enabled: false,
+        amounts: [],
+        defaultAmount: 0
+      };
+    },
+
+    async notifications(_, { filters }) {
+      // Placeholder - implement Notification model if exists
+      return [];
+    },
+
+    async auditLogs(_, { filters }) {
+      // Use auditLogger service if available
+      // Placeholder implementation
+      return {
+        data: [],
+        total: 0
+      };
+    },
+
+    async withdrawRequests(_, { filters }) {
+      // Placeholder - implement WithdrawRequest model if exists
+      return {
+        success: true,
+        message: 'Success',
+        data: []
+      };
+    },
+
+    async getTicketUsers(_, { filters }) {
+      // Placeholder - implement support ticket system if exists
+      return [];
+    },
+
+    async getTicketUsersWithLatest(_, { filters }) {
+      // Placeholder - implement support ticket system if exists
+      return [];
+    },
+
+    async getSingleUserSupportTickets(_, { userId }) {
+      // Placeholder - implement support ticket system if exists
+      return [];
+    },
+
+    async getSingleSupportTicket(_, { ticketId }) {
+      // Placeholder - implement support ticket system if exists
+      throw new Error('Support tickets not implemented');
+    },
+
+    async getTicketMessages(_, { ticketId }) {
+      // Placeholder - implement support ticket system if exists
+      return [];
+    },
+
+    async getClonedRestaurants() {
+      // Placeholder - implement cloned restaurants logic if exists
+      return [];
+    },
+
+    async getClonedRestaurantsPaginated(_, { filters }) {
+      // Placeholder - implement cloned restaurants logic if exists
+      return {
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 10,
+        totalPages: 0
+      };
+    },
+
+    async getRestaurantDeliveryZoneInfo(_, { restaurantId }) {
+      const restaurant = await Restaurant.findById(restaurantId)
+        .populate('zone')
+        .lean();
+      
+      if (!restaurant) {
+        throw new Error('Restaurant not found');
+      }
+
+      return {
+        restaurantId: restaurant._id.toString(),
+        deliveryBounds: restaurant.deliveryBounds || null,
+        zone: restaurant.zone || null,
+        deliveryInfo: {
+          minDeliveryFee: restaurant.minimumOrder || 0,
+          deliveryDistance: 0,
+          deliveryFee: 0
+        }
+      };
     }
   },
 
@@ -1098,6 +1600,100 @@ const resolvers = {
         }
         return fav.toString();
       });
+    },
+    // Admin app fields
+    status: (parent) => {
+      return parent.isActive ? 'active' : 'inactive';
+    },
+    lastLogin: async (parent) => {
+      // Return from metadata or updatedAt
+      if (parent.metadata?.lastLogin) {
+        return new Date(parent.metadata.lastLogin);
+      }
+      return parent.updatedAt || null;
+    },
+    notes: (parent) => {
+      return parent.metadata?.notes || null;
+    },
+    username: (parent) => {
+      return parent.metadata?.username || null;
+    },
+    unique_id: (parent) => {
+      return parent._id?.toString() || null;
+    },
+    plainPassword: () => {
+      // Never expose real passwords
+      return null;
+    },
+    vehicleType: (parent) => {
+      return parent.riderProfile?.vehicleType || parent.riderProfile?.vehicleDetails?.vehicleType || null;
+    },
+    assigned: async (parent) => {
+      // Check if rider has assigned orders
+      if (parent.role !== 'rider') return false;
+      const assignedOrder = await Order.findOne({ 
+        rider: parent._id, 
+        orderStatus: { $in: ['assigned', 'picked', 'enroute'] }
+      }).lean();
+      return !!assignedOrder;
+    },
+    permissions: (parent) => {
+      // Return permissions array based on role
+      if (parent.role === 'admin') {
+        return ['ALL'];
+      }
+      return [];
+    },
+    zone: async (parent) => {
+      if (parent.zone) {
+        return await Zone.findById(parent.zone).lean();
+      }
+      return null;
+    },
+    restaurants: async (parent) => {
+      if (parent.role === 'seller') {
+        return await Restaurant.find({ owner: parent._id }).lean();
+      }
+      return [];
+    },
+    bussinessDetails: (parent) => {
+      // Return from restaurant or user metadata
+      return parent.metadata?.bussinessDetails || null;
+    },
+    licenseDetails: (parent) => {
+      return parent.riderProfile?.licenseDetails || null;
+    },
+    vehicleDetails: (parent) => {
+      return parent.riderProfile?.vehicleDetails || null;
+    }
+  },
+
+  Restaurant: {
+    unique_restaurant_id: (parent) => {
+      return parent._id?.toString() || parent.orderId || null;
+    },
+    deliveryInfo: (parent) => {
+      return {
+        minDeliveryFee: parent.minimumOrder || 0,
+        deliveryDistance: 0, // Calculate if needed
+        deliveryFee: 0 // Calculate if needed
+      };
+    },
+    city: (parent) => {
+      // Extract city from address or metadata
+      if (parent.address) {
+        const parts = parent.address.split(',');
+        return parts[parts.length - 2]?.trim() || null;
+      }
+      return parent.metadata?.city || null;
+    },
+    postCode: (parent) => {
+      // Extract postcode from address or metadata
+      if (parent.address) {
+        const parts = parent.address.split(',');
+        return parts[parts.length - 1]?.trim() || null;
+      }
+      return parent.metadata?.postCode || null;
     }
   },
 
