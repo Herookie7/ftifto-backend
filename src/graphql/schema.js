@@ -300,6 +300,45 @@ const typeDefs = gql`
     twilioEnabled: Boolean
     appAmplitudeApiKey: String
     customerAppSentryUrl: String
+    # Email configuration
+    email: String
+    emailName: String
+    password: String
+    enableEmail: Boolean
+    formEmail: String
+    # PayPal configuration
+    clientId: String
+    clientSecret: String
+    sandbox: Boolean
+    # Stripe configuration
+    publishableKey: String
+    secretKey: String
+    # WhatsApp OTP
+    skipWhatsAppOTP: Boolean
+    # SendGrid configuration
+    sendGridApiKey: String
+    sendGridEnabled: Boolean
+    sendGridEmail: String
+    sendGridEmailName: String
+    sendGridPassword: String
+    # Cloudinary configuration
+    cloudinaryUploadUrl: String
+    cloudinaryApiKey: String
+    # Google Client ID
+    webClientID: String
+    googleMapLibraries: String
+    googleColor: String
+    # Firebase configuration
+    firebaseKey: String
+    authDomain: String
+    projectId: String
+    storageBucket: String
+    msgSenderId: String
+    appId: String
+    measurementId: String
+    # App configuration
+    isPaidVersion: Boolean
+    vapidKey: String
   }
 
   type Cuisine {
@@ -396,6 +435,27 @@ const typeDefs = gql`
   type RestaurantLoginResponse {
     token: String
     restaurantId: ID
+  }
+
+  type OwnerRestaurantPreview {
+    _id: ID
+    orderId: String
+    name: String
+    image: String
+    address: String
+  }
+
+  type OwnerLoginResponse {
+    userId: ID
+    token: String
+    email: String
+    userType: String
+    restaurants: [OwnerRestaurantPreview]
+    permissions: [String]
+    userTypeId: String
+    image: String
+    name: String
+    shopType: String
   }
 
   type LastOrderCredsResponse {
@@ -592,6 +652,7 @@ const typeDefs = gql`
     # Authentication mutations
     login(email: String, password: String, type: String!, appleId: String, name: String, notificationToken: String): LoginResponse
     restaurantLogin(username: String!, password: String!, notificationToken: String): RestaurantLoginResponse
+    ownerLogin(email: String!, password: String!): OwnerLoginResponse
     createUser(userInput: CreateUserInput!): AuthResponse
     verifyOtp(otp: String!, email: String, phone: String): VerifyOtpResponse
     sendOtpToEmail(email: String!): ResultResponse

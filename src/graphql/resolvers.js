@@ -1272,6 +1272,105 @@ const resolvers = {
       };
     },
 
+    async ownerLogin(_, { email, password }, context) {
+      if (!email || !password) {
+        throw new Error('Email and password are required');
+      }
+
+      // Find user by email
+      const user = await User.findOne({
+        $or: [{ email }, { phone: email }]
+      }).select('+password');
+
+      if (!user) {
+        throw new Error('Invalid credentials');
+      }
+
+      // Verify password
+      const isMatch = await user.matchPassword(password);
+      if (!isMatch) {
+        throw new Error('Invalid credentials');
+      }
+
+      // Check if account is active
+      if (user.isActive === false) {
+        throw new Error('Account is deactivated');
+      }
+
+      // Map role to userType for admin app
+      let userType = 'STAFF';
+      if (user.role === 'admin') {
+        userType = 'ADMIN';
+      } else if (user.role === 'seller') {
+        userType = 'RESTAURANT'; // Default to RESTAURANT for sellers
+      }
+
+      // Generate token
+      const token = signToken({ id: user._id, role: user.role });
+
+      // Fetch restaurants based on user role
+      let restaurants = [];
+      let userTypeId = null;
+      let shopType = null;
+
+      if (user.role === 'admin') {
+        // Admin can see all restaurants
+        restaurants = await Restaurant.find({ isActive: true })
+          .select('_id orderId name image address')
+          .lean();
+      } else if (user.role === 'seller') {
+        // Seller can see their own restaurants
+        const sellerRestaurants = await Restaurant.find({ owner: user._id, isActive: true })
+          .select('_id orderId name image address shopType')
+          .lean();
+        
+        restaurants = sellerRestaurants.map(r => ({
+          _id: r._id.toString(),
+          orderId: r.orderId || '',
+          name: r.name || '',
+          image: r.image || '',
+          address: r.address || ''
+        }));
+
+        // If seller has restaurants, set userTypeId and shopType from first restaurant
+        if (sellerRestaurants.length > 0) {
+          userTypeId = sellerRestaurants[0]._id.toString();
+          shopType = sellerRestaurants[0].shopType || '';
+          // If seller has multiple restaurants, set userType to VENDOR
+          if (sellerRestaurants.length > 1) {
+            userType = 'VENDOR';
+          }
+        }
+      }
+
+      auditLogger.logEvent({
+        category: 'auth',
+        action: 'owner_login',
+        userId: user._id.toString(),
+        metadata: { role: user.role, userType }
+      });
+
+      // Return admin app expected format
+      return {
+        userId: user._id.toString(),
+        token,
+        email: user.email || '',
+        userType,
+        restaurants: restaurants.map(r => ({
+          _id: r._id.toString(),
+          orderId: r.orderId || '',
+          name: r.name || '',
+          image: r.image || '',
+          address: r.address || ''
+        })),
+        permissions: user.role === 'admin' ? ['ALL'] : [], // Admin has all permissions
+        userTypeId: userTypeId || user._id.toString(),
+        image: user.image || user.avatar || '',
+        name: user.name || '',
+        shopType: shopType || ''
+      };
+    },
+
     async login(_, { email, password, type, appleId, name, notificationToken }, context) {
       let user;
 
