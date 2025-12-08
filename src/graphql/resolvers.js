@@ -1396,7 +1396,6 @@ const resolvers = {
       }
 
       const vendors = await User.find(query)
-        .populate('restaurants')
         .lean();
 
       return vendors;
@@ -1506,7 +1505,6 @@ const resolvers = {
 
     async getVendor(_, { vendorId }) {
       const vendor = await User.findById(vendorId)
-        .populate('restaurants')
         .lean();
       if (!vendor || vendor.role !== 'seller') {
         throw new Error('Vendor not found');
