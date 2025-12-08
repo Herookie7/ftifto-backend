@@ -932,7 +932,7 @@ const typeDefs = gql`
     allOrdersWithoutPagination(filters: FiltersInput): [Order]
     getActiveOrders(restaurantId: ID, page: Int, rowsPerPage: Int, actions: [String], search: String): ActiveOrdersResponse
     ordersByRestId(restaurantId: String!, filters: FiltersInput): [Order]
-    ordersByUser(userId: String!, page: Int, limit: Int): OrdersByUserResponse
+    ordersByUser(userId: ID!, page: Int, limit: Int): OrdersByUserResponse
     coupons: [Coupon]
     tips: Tipping
     notifications(filters: FiltersInput): [Notification]
