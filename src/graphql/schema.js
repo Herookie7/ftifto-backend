@@ -990,6 +990,12 @@ const typeDefs = gql`
     updateProduct(id: ID!, productInput: ProductInput!): Product
     deleteProduct(id: ID!): Boolean
     
+    # Rider management mutations (Admin app)
+    createRider(riderInput: RiderInput!): User
+    editRider(riderInput: RiderInput!): User
+    deleteRider(id: String!): User
+    toggleAvailablity(id: String!): User
+    
     # Admin app mutations
     markWebNotificationsAsRead: [WebNotification]
   }
@@ -1157,6 +1163,17 @@ const typeDefs = gql`
     success: Boolean
     message: String
     data: Restaurant
+  }
+
+  input RiderInput {
+    _id: ID
+    name: String!
+    username: String!
+    password: String!
+    phone: String!
+    zone: ID
+    vehicleType: String
+    available: Boolean
   }
 `;
 

@@ -3322,6 +3322,161 @@ const resolvers = {
       return true;
     },
 
+    // Rider management mutations (Admin app)
+    async createRider(_, { riderInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Check if username or phone already exists
+      const existingUser = await User.findOne({
+        $or: [
+          { 'metadata.username': riderInput.username },
+          { phone: riderInput.phone }
+        ]
+      });
+
+      if (existingUser) {
+        throw new Error('Username or phone number already exists');
+      }
+
+      // Create new rider user
+      const rider = new User({
+        name: riderInput.name,
+        password: riderInput.password,
+        phone: riderInput.phone,
+        role: 'rider',
+        zone: riderInput.zone || null,
+        isActive: true,
+        metadata: {
+          username: riderInput.username
+        },
+        riderProfile: {
+          vehicleType: riderInput.vehicleType || null,
+          available: riderInput.available !== undefined ? riderInput.available : true,
+          location: { type: 'Point', coordinates: [0, 0] }
+        }
+      });
+
+      await rider.save();
+      return await User.findById(rider._id).populate('zone').lean();
+    },
+
+    async editRider(_, { riderInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (!riderInput._id) {
+        throw new Error('Rider ID is required for editing');
+      }
+
+      const rider = await User.findById(riderInput._id);
+      if (!rider) {
+        throw new Error('Rider not found');
+      }
+
+      if (rider.role !== 'rider') {
+        throw new Error('User is not a rider');
+      }
+
+      // Check if username or phone is being changed and already exists
+      const currentUsername = rider.metadata?.username;
+      if (riderInput.username && riderInput.username !== currentUsername) {
+        const existingUser = await User.findOne({ 'metadata.username': riderInput.username });
+        if (existingUser) {
+          throw new Error('Username already exists');
+        }
+      }
+
+      if (riderInput.phone && riderInput.phone !== rider.phone) {
+        const existingUser = await User.findOne({ phone: riderInput.phone });
+        if (existingUser) {
+          throw new Error('Phone number already exists');
+        }
+      }
+
+      // Update rider fields
+      if (riderInput.name) rider.name = riderInput.name;
+      if (riderInput.password) rider.password = riderInput.password;
+      if (riderInput.phone) rider.phone = riderInput.phone;
+      if (riderInput.zone !== undefined) rider.zone = riderInput.zone;
+      
+      // Update metadata.username
+      if (riderInput.username) {
+        if (!rider.metadata) {
+          rider.metadata = {};
+        }
+        rider.metadata.username = riderInput.username;
+      }
+      
+      // Update rider profile
+      if (!rider.riderProfile) {
+        rider.riderProfile = {};
+      }
+      if (riderInput.vehicleType !== undefined) {
+        rider.riderProfile.vehicleType = riderInput.vehicleType;
+      }
+      if (riderInput.available !== undefined) {
+        rider.riderProfile.available = riderInput.available;
+      }
+
+      await rider.save();
+      return await User.findById(rider._id).populate('zone').lean();
+    },
+
+    async deleteRider(_, { id }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const rider = await User.findById(id).populate('zone').lean();
+      if (!rider) {
+        throw new Error('Rider not found');
+      }
+
+      if (rider.role !== 'rider') {
+        throw new Error('User is not a rider');
+      }
+
+      // Check if rider has any assigned orders
+      const assignedOrders = await Order.countDocuments({
+        rider: id,
+        orderStatus: { $in: ['accepted', 'preparing', 'ready', 'picked', 'on_the_way'] }
+      });
+
+      if (assignedOrders > 0) {
+        throw new Error('Cannot delete rider with active orders');
+      }
+
+      await User.findByIdAndDelete(id);
+      return rider;
+    },
+
+    async toggleAvailablity(_, { id }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const rider = await User.findById(id);
+      if (!rider) {
+        throw new Error('Rider not found');
+      }
+
+      if (rider.role !== 'rider') {
+        throw new Error('User is not a rider');
+      }
+
+      // Toggle availability
+      if (!rider.riderProfile) {
+        rider.riderProfile = { available: true };
+      }
+      rider.riderProfile.available = !rider.riderProfile.available;
+
+      await rider.save();
+      return await User.findById(rider._id).populate('zone').lean();
+    },
+
     // Admin app mutations
     async markWebNotificationsAsRead(_, __, context) {
       if (!context.user) {
