@@ -761,8 +761,8 @@ const seed = async () => {
   // Create configuration
   console.log('Creating configuration...');
   await Configuration.create({
-    currency: 'USD',
-    currencySymbol: '$',
+    currency: 'INR',
+    currencySymbol: '₹',
     deliveryRate: 2.50,
     androidClientID: 'test-android-client-id',
     iOSClientID: 'test-ios-client-id',

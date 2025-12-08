@@ -98,7 +98,7 @@ This document extracts all critical configuration data from the `ftifto-backend/
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret | `''` | `env.js` |
 
 **Hard-coded Configuration**:
-- Default currency: `'usd'` (in `config/index.js`)
+- Default currency: `'inr'` (in `config/index.js`)
 - Stripe API version: `'2023-10-16'` (in `stripe.service.js`)
 
 ---
@@ -388,7 +388,7 @@ This document extracts all critical configuration data from the `ftifto-backend/
 
 **Hard-coded Configuration**:
 - **API Version**: `'2023-10-16'` (in `stripe.service.js`)
-- **Default Currency**: `'usd'` (in `config/index.js`)
+- **Default Currency**: `'inr'` (in `config/index.js`)
 - **Amount Conversion**: Multiplies by 100 (converts to cents/minor units)
 
 **Webhook Endpoint**: `/api/v1/payments/webhook`
@@ -597,7 +597,7 @@ This document extracts all critical configuration data from the `ftifto-backend/
 - **API Base URL**: `http://localhost:8001/api`
 - **Server Port**: `8001`
 - **Docs Route**: `/api/v1/docs`
-- **Stripe Currency**: `'usd'`
+- **Stripe Currency**: `'inr'`
 - **Stripe API Version**: `'2023-10-16'`
 - **MongoDB Pool Size**: `10`
 - **MongoDB Timeout**: `10000ms`

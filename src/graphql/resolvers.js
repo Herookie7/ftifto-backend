@@ -1062,7 +1062,7 @@ const resolvers = {
           _id: order._id.toString(),
           status: order.paymentStatus || 'paid',
           amountTransferred: order.orderAmount,
-          amountCurrency: 'USD', // Default currency
+          amountCurrency: 'INR', // Default currency
           transactionId: order.orderId || order._id.toString(),
           userType: 'SELLER',
           userId: context.user._id.toString(),

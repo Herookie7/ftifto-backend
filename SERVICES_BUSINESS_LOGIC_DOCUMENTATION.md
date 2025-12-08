@@ -304,7 +304,7 @@ This document lists all services and business logic found in the `ftifto-backend
 
 **Payment Intent Creation**:
 - Converts amount to minor units (multiply by 100)
-- Sets default currency: 'usd'
+- Sets default currency: 'inr'
 - Includes orderId in metadata
 - Enables automatic payment methods
 - Logs payment intent creation
@@ -325,7 +325,7 @@ This document lists all services and business logic found in the `ftifto-backend
 **Configuration**:
 - `config.payments.stripe.secretKey` - Stripe secret key
 - `config.payments.stripe.webhookSecret` - Stripe webhook secret
-- `config.payments.stripe.defaultCurrency` - Default currency ('usd')
+- `config.payments.stripe.defaultCurrency` - Default currency ('inr')
 
 **Business Rules**:
 - Throws error if Stripe not configured

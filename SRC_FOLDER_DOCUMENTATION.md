@@ -369,8 +369,8 @@ This document provides a comprehensive scan of all files and subfolders in the `
 **Role**: Application configuration model (singleton)
 **Schema**: `configurationSchema`
 **Key Fields**:
-- `currency` (String, default: 'USD')
-- `currencySymbol` (String, default: '$')
+- `currency` (String, default: 'INR')
+- `currencySymbol` (String, default: '₹')
 - `deliveryRate` (Number, default: 0)
 - `androidClientID` (String, trimmed)
 - `iOSClientID` (String, trimmed)
