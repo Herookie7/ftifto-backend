@@ -597,6 +597,26 @@ const resolvers = {
       return await User.find().lean();
     },
 
+    async user(_, { id }) {
+      const user = await User.findById(id).lean();
+      if (!user) {
+        throw new Error('User not found');
+      }
+      // Map addressBook to addresses for GraphQL
+      return {
+        ...user,
+        addresses: (user.addressBook || []).map(addr => ({
+          _id: addr._id,
+          deliveryAddress: addr.deliveryAddress,
+          details: addr.details,
+          label: addr.label,
+          selected: addr.selected || false,
+          location: addr.location || null
+        })),
+        favourite: (user.favourite || []).map(fav => fav._id?.toString() || fav.toString())
+      };
+    },
+
     // Rider by ID
     async rider(_, { id }) {
       const rider = await User.findById(id).lean();
@@ -1606,6 +1626,36 @@ const resolvers = {
         .populate('rider')
         .sort({ createdAt: -1 })
         .lean();
+    },
+
+    async ordersByUser(_, { userId, page = 1, limit = 10 }) {
+      const query = { customer: userId, isActive: true };
+      
+      const skip = (page - 1) * limit;
+      
+      const [orders, totalCount] = await Promise.all([
+        Order.find(query)
+          .populate('restaurant', '_id name')
+          .populate('rider')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Order.countDocuments(query)
+      ]);
+
+      const totalPages = Math.ceil(totalCount / limit);
+      const nextPage = page < totalPages ? page + 1 : null;
+      const prevPage = page > 1 ? page - 1 : null;
+
+      return {
+        orders,
+        totalCount,
+        totalPages,
+        currentPage: page,
+        nextPage,
+        prevPage
+      };
     },
 
     async coupons() {

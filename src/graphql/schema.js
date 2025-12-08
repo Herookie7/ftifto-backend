@@ -744,6 +744,15 @@ const typeDefs = gql`
     totalPages: Int
   }
 
+  type OrdersByUserResponse {
+    orders: [Order]
+    totalCount: Int
+    totalPages: Int
+    currentPage: Int
+    nextPage: Int
+    prevPage: Int
+  }
+
   type ActiveOrdersResponse {
     totalCount: Int
     orders: [Order]
@@ -919,9 +928,11 @@ const typeDefs = gql`
     restaurantsPaginated(filters: FiltersInput): RestaurantPaginatedResponse
     restaurantByOwner(ownerId: String!): User
     getVendor(vendorId: String!): User
+    user(id: ID!): User
     allOrdersWithoutPagination(filters: FiltersInput): [Order]
     getActiveOrders(restaurantId: ID, page: Int, rowsPerPage: Int, actions: [String], search: String): ActiveOrdersResponse
     ordersByRestId(restaurantId: String!, filters: FiltersInput): [Order]
+    ordersByUser(userId: String!, page: Int, limit: Int): OrdersByUserResponse
     coupons: [Coupon]
     tips: Tipping
     notifications(filters: FiltersInput): [Notification]
