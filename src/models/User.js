@@ -98,6 +98,7 @@ const userSchema = new mongoose.Schema(
     favourite: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant' }],
     userType: { type: String, trim: true }, // 'apple', 'google', 'facebook', 'email', 'phone'
     notificationToken: { type: String, trim: true },
+    zone: { type: mongoose.Schema.Types.ObjectId, ref: 'Zone' },
     metadata: {
       type: mongoose.Schema.Types.Mixed
     },
