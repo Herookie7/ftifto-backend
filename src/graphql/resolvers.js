@@ -3019,6 +3019,80 @@ const resolvers = {
       return true;
     },
 
+    async createCuisine(_, { cuisineInput }, context) {
+      // Check if cuisine with same name already exists
+      const existing = await Cuisine.findOne({ name: cuisineInput.name }).lean();
+      if (existing) {
+        throw new Error('Cuisine with this name already exists');
+      }
+
+      const cuisine = new Cuisine({
+        name: cuisineInput.name,
+        description: cuisineInput.description,
+        image: cuisineInput.image,
+        shopType: cuisineInput.shopType,
+        isActive: cuisineInput.isActive !== undefined ? cuisineInput.isActive : true
+      });
+
+      await cuisine.save();
+      return cuisine.toObject();
+    },
+
+    async editCuisine(_, { cuisineInput }, context) {
+      if (!cuisineInput._id) {
+        throw new Error('Cuisine ID is required for editing');
+      }
+
+      const cuisine = await Cuisine.findById(cuisineInput._id);
+      if (!cuisine) {
+        throw new Error('Cuisine not found');
+      }
+
+      // Check if name is being changed and if new name already exists
+      if (cuisineInput.name && cuisineInput.name !== cuisine.name) {
+        const existing = await Cuisine.findOne({ name: cuisineInput.name }).lean();
+        if (existing) {
+          throw new Error('Cuisine with this name already exists');
+        }
+      }
+
+      if (cuisineInput.name) cuisine.name = cuisineInput.name;
+      if (cuisineInput.description !== undefined) cuisine.description = cuisineInput.description;
+      if (cuisineInput.image !== undefined) cuisine.image = cuisineInput.image;
+      if (cuisineInput.shopType !== undefined) cuisine.shopType = cuisineInput.shopType;
+      if (cuisineInput.isActive !== undefined) cuisine.isActive = cuisineInput.isActive;
+
+      await cuisine.save();
+      return cuisine.toObject();
+    },
+
+    async deleteCuisine(_, { id }, context) {
+      const cuisine = await Cuisine.findByIdAndDelete(id);
+      if (!cuisine) {
+        throw new Error('Cuisine not found');
+      }
+      return true;
+    },
+
+    async uploadImageToS3(_, { image }, context) {
+      // For now, if image is already a URL, return it
+      // In production, implement actual S3/Cloudinary upload
+      if (image.startsWith('http://') || image.startsWith('https://')) {
+        return { imageUrl: image };
+      }
+
+      // If it's a base64 data URL, we could decode and upload to S3/Cloudinary
+      // For now, we'll return the base64 string as-is (not recommended for production)
+      // TODO: Implement actual S3/Cloudinary upload
+      if (image.startsWith('data:image/')) {
+        // This is a placeholder - in production, upload to S3/Cloudinary and return URL
+        throw new Error('Base64 image upload not yet implemented. Please provide a URL.');
+      }
+
+      // If it's just a path, return as-is
+      return { imageUrl: image };
+    },
+
     async sendChatMessage(_, { message, orderId }, context) {
       if (!context.user) {
         throw new Error('Authentication required');

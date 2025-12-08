@@ -997,6 +997,10 @@ const typeDefs = gql`
     createCoupon(couponInput: CouponInput!): Coupon
     editCoupon(couponInput: CouponInput!): Coupon
     deleteCoupon(id: String!): Boolean
+    createCuisine(cuisineInput: CuisineInput!): Cuisine
+    editCuisine(cuisineInput: CuisineInput!): Cuisine
+    deleteCuisine(id: String!): Boolean
+    uploadImageToS3(image: String!): UploadImageResponse
     sendChatMessage(message: ChatMessageInput!, orderId: ID!): ChatMessageResponse
     createActivity(groupId: String!, module: String!, screenPath: String!, type: String!, details: String!): String
     
@@ -1151,6 +1155,15 @@ const typeDefs = gql`
     minimumOrder: Float
   }
 
+  input CuisineInput {
+    _id: ID
+    name: String!
+    description: String
+    image: String
+    shopType: String
+    isActive: Boolean
+  }
+
   input ProductInput {
     title: String!
     description: String
@@ -1164,6 +1177,10 @@ const typeDefs = gql`
     preparationTime: Int
     variations: [VariationInput]
     addons: [AddonInput]
+  }
+
+  type UploadImageResponse {
+    imageUrl: String!
   }
 
   type Product {
