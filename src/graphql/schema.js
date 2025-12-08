@@ -489,6 +489,15 @@ const typeDefs = gql`
     title: String
     discount: Float
     enabled: Boolean
+    code: String
+  }
+
+  input CouponInput {
+    _id: ID
+    title: String!
+    discount: Float!
+    enabled: Boolean
+    code: String
   }
 
   type ChatMessage {
@@ -833,6 +842,9 @@ const typeDefs = gql`
     limit: Int
     pageSize: Int
     pageNo: Int
+    starting_date: String
+    ending_date: String
+    dateKeyword: String
   }
 
   input TimingsInput {
@@ -905,7 +917,7 @@ const typeDefs = gql`
     staffs(filters: FiltersInput): [User]
     restaurants(filters: FiltersInput): [Restaurant]
     restaurantsPaginated(filters: FiltersInput): RestaurantPaginatedResponse
-    restaurantByOwner(ownerId: String!): [Restaurant]
+    restaurantByOwner(ownerId: String!): User
     getVendor(vendorId: String!): User
     allOrdersWithoutPagination(filters: FiltersInput): [Order]
     getActiveOrders(restaurantId: ID, page: Int, rowsPerPage: Int, actions: [String], search: String): ActiveOrdersResponse
@@ -971,6 +983,9 @@ const typeDefs = gql`
     forgotPassword(email: String!): ResultResponse
     resetPassword(password: String!, email: String!): ResultResponse
     getCoupon(coupon: String!): Coupon
+    createCoupon(couponInput: CouponInput!): Coupon
+    editCoupon(couponInput: CouponInput!): Coupon
+    deleteCoupon(id: String!): Boolean
     sendChatMessage(message: ChatMessageInput!, orderId: ID!): ChatMessageResponse
     createActivity(groupId: String!, module: String!, screenPath: String!, type: String!, details: String!): String
     

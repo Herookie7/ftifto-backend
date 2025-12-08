@@ -10,6 +10,7 @@ const Offer = require('../models/Offer');
 const Section = require('../models/Section');
 const Zone = require('../models/Zone');
 const Banner = require('../models/Banner');
+const Coupon = require('../models/Coupon');
 const { signToken } = require('../utils/token');
 const config = require('../config');
 const generateOrderId = require('../utils/generateOrderId');
@@ -1497,10 +1498,20 @@ const resolvers = {
     },
 
     async restaurantByOwner(_, { ownerId }) {
-      return await Restaurant.find({ owner: ownerId })
-        .populate('owner')
+      const user = await User.findById(ownerId).lean();
+      if (!user) {
+        throw new Error('User not found');
+      }
+      // Get restaurants for this owner
+      const restaurants = await Restaurant.find({ owner: ownerId })
         .populate('zone')
         .lean();
+      
+      // Return user with restaurants populated
+      return {
+        ...user,
+        restaurants
+      };
     },
 
     async getVendor(_, { vendorId }) {
@@ -1521,6 +1532,19 @@ const resolvers = {
       }
       if (filters?.status) {
         query.orderStatus = filters.status;
+      }
+      
+      // Handle date filtering
+      if (filters?.starting_date || filters?.ending_date) {
+        query.createdAt = {};
+        if (filters.starting_date) {
+          query.createdAt.$gte = new Date(filters.starting_date);
+        }
+        if (filters.ending_date) {
+          const endDate = new Date(filters.ending_date);
+          endDate.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = endDate;
+        }
       }
 
       return await Order.find(query)
@@ -1585,8 +1609,7 @@ const resolvers = {
     },
 
     async coupons() {
-      // Placeholder - implement Coupon model if exists
-      return [];
+      return await Coupon.find().sort({ createdAt: -1 }).lean();
     },
 
     async tips() {
@@ -2879,14 +2902,71 @@ const resolvers = {
     },
 
     async getCoupon(_, { coupon }) {
-      // Placeholder for coupon lookup
-      // In production, implement actual coupon model and validation
-      return {
-        _id: coupon,
-        title: coupon,
-        discount: 0,
-        enabled: false
-      };
+      const couponDoc = await Coupon.findOne({ 
+        $or: [
+          { code: coupon },
+          { _id: coupon }
+        ]
+      }).lean();
+      if (!couponDoc) {
+        throw new Error('Coupon not found');
+      }
+      return couponDoc;
+    },
+
+    async createCoupon(_, { couponInput }, context) {
+      // Check if code already exists
+      if (couponInput.code) {
+        const existing = await Coupon.findOne({ code: couponInput.code }).lean();
+        if (existing) {
+          throw new Error('Coupon code already exists');
+        }
+      }
+
+      const coupon = new Coupon({
+        title: couponInput.title,
+        code: couponInput.code,
+        discount: couponInput.discount,
+        enabled: couponInput.enabled !== undefined ? couponInput.enabled : true
+      });
+
+      await coupon.save();
+      return coupon.toObject();
+    },
+
+    async editCoupon(_, { couponInput }, context) {
+      if (!couponInput._id) {
+        throw new Error('Coupon ID is required for editing');
+      }
+
+      const coupon = await Coupon.findById(couponInput._id);
+      if (!coupon) {
+        throw new Error('Coupon not found');
+      }
+
+      // Check if code is being changed and if new code already exists
+      if (couponInput.code && couponInput.code !== coupon.code) {
+        const existing = await Coupon.findOne({ code: couponInput.code }).lean();
+        if (existing) {
+          throw new Error('Coupon code already exists');
+        }
+      }
+
+      if (couponInput.title) coupon.title = couponInput.title;
+      if (couponInput.code !== undefined) coupon.code = couponInput.code;
+      if (couponInput.discount !== undefined) coupon.discount = couponInput.discount;
+      if (couponInput.enabled !== undefined) coupon.enabled = couponInput.enabled;
+
+      await coupon.save();
+      return coupon.toObject();
+    },
+
+    async deleteCoupon(_, { id }, context) {
+      const coupon = await Coupon.findByIdAndDelete(id);
+      if (!coupon) {
+        throw new Error('Coupon not found');
+      }
+      return true;
     },
 
     async sendChatMessage(_, { message, orderId }, context) {
