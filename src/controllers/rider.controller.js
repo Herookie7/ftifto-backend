@@ -28,9 +28,17 @@ const getAssignedOrders = asyncHandler(async (req, res) => {
 const updateRiderStatus = asyncHandler(async (req, res) => {
   const { available } = req.body;
 
+  const riderProfile = req.user.riderProfile || {};
+
+  // Ensure nested objects exist to avoid cast errors when fields are undefined
+  const safeLicenseDetails = riderProfile.licenseDetails || {};
+  const safeVehicleDetails = riderProfile.vehicleDetails || {};
+
   req.user.riderProfile = {
-    ...req.user.riderProfile,
-    available
+    ...riderProfile,
+    available,
+    licenseDetails: safeLicenseDetails,
+    vehicleDetails: safeVehicleDetails
   };
 
   await req.user.save();
