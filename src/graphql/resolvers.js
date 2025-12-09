@@ -1820,6 +1820,10 @@ const resolvers = {
     vehicleType: (parent) => {
       return parent.riderProfile?.vehicleType || parent.riderProfile?.vehicleDetails?.vehicleType || null;
     },
+    available: (parent) => {
+      // Map riderProfile.available to available field for GraphQL
+      return parent.riderProfile?.available ?? null;
+    },
     assigned: async (parent) => {
       // Check if rider has assigned orders
       if (parent.role !== 'rider') return false;
@@ -2186,8 +2190,13 @@ const resolvers = {
           throw new Error('Email and password are required');
         }
 
+        // Support login with email, phone, or metadata.username (for riders)
         user = await User.findOne({
-          $or: [{ email }, { phone: email }]
+          $or: [
+            { email },
+            { phone: email },
+            { 'metadata.username': email }
+          ]
         }).select('+password');
 
         if (!user) {

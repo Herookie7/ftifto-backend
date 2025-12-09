@@ -61,8 +61,13 @@ const loginUser = asyncHandler(async (req, res) => {
 
   const { identifier, password } = req.body;
 
+  // Support login with email, phone, or metadata.username (for riders)
   const user = await User.findOne({
-    $or: [{ email: identifier }, { phone: identifier }]
+    $or: [
+      { email: identifier },
+      { phone: identifier },
+      { 'metadata.username': identifier }
+    ]
   }).select('+password');
 
   if (!user) {
