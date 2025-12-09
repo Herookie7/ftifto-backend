@@ -2961,14 +2961,22 @@ const resolvers = {
     },
 
     async getCoupon(_, { coupon }) {
-      const couponDoc = await Coupon.findOne({ 
-        $or: [
-          { code: coupon },
-          { _id: coupon }
-        ]
-      }).lean();
+      const mongoose = require('mongoose');
+      let couponDoc;
+      
+      // First try to find by code (most common case)
+      couponDoc = await Coupon.findOne({ code: coupon }).lean();
+      
+      // If not found by code and it looks like an ObjectId, try by _id
+      if (!couponDoc && mongoose.Types.ObjectId.isValid(coupon)) {
+        couponDoc = await Coupon.findById(coupon).lean();
+      }
+      
       if (!couponDoc) {
         throw new Error('Coupon not found');
+      }
+      if (!couponDoc.enabled) {
+        throw new Error('Coupon is disabled');
       }
       return couponDoc;
     },
