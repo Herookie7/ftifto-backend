@@ -798,6 +798,29 @@ const typeDefs = gql`
     earningsArray: [EarningsArrayItem]
   }
 
+  type RiderEarningsGraphData {
+    totalCount: Int
+    earnings: [RiderEarningsGraphItem]
+  }
+
+  type RiderEarningsGraphItem {
+    _id: ID
+    date: String
+    totalEarningsSum: Float
+    totalTipsSum: Float
+    totalDeliveries: Int
+    totalHours: Float
+    earningsArray: [RiderEarningsArrayItem]
+  }
+
+  type RiderEarningsArrayItem {
+    tip: Float
+    deliveryFee: Float
+    totalEarnings: Float
+    date: String
+    orderDetails: OrderDetails
+  }
+
   type EarningsArrayItem {
     totalOrderAmount: Float
     totalEarnings: Float
@@ -913,6 +936,11 @@ const typeDefs = gql`
     storeEarningsGraph(storeId: ID!, page: Int, limit: Int, startDate: String, endDate: String): StoreEarningsGraphData
     chat(order: String!): [ChatMessage]
     
+    # Rider queries
+    riderOrders: [Order]
+    riderEarningsGraph(riderId: ID!, page: Int, limit: Int, startDate: String, endDate: String): RiderEarningsGraphData
+    riderCurrentWithdrawRequest(riderId: String): WithdrawRequest
+    
     # Admin app queries
     webNotifications(userId: String, pagination: PaginationInput): [WebNotification]
     getDashboardUsers: DashboardUsersResponse
@@ -961,6 +989,8 @@ const typeDefs = gql`
     login(email: String, password: String, type: String!, appleId: String, name: String, notificationToken: String): LoginResponse
     restaurantLogin(username: String!, password: String!, notificationToken: String): RestaurantLoginResponse
     ownerLogin(email: String!, password: String!): OwnerLoginResponse
+    riderLogin(username: String, password: String, notificationToken: String, timeZone: String!): LoginResponse
+    createRiderWithdrawRequest(requestAmount: Float!): WithdrawRequest
     createUser(userInput: CreateUserInput!): AuthResponse
     verifyOtp(otp: String!, email: String, phone: String): VerifyOtpResponse
     sendOtpToEmail(email: String!): ResultResponse

@@ -1148,6 +1148,168 @@ const resolvers = {
       return null;
     },
 
+    // Rider queries
+    async riderOrders(_, __, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'rider') {
+        throw new Error('Only riders can access rider orders');
+      }
+
+      // Get orders assigned to this rider or available for assignment
+      const orders = await Order.find({
+        $or: [
+          { rider: context.user._id },
+          { orderStatus: 'accepted', rider: null }
+        ],
+        isActive: true
+      })
+        .populate('restaurant', '_id name image address location')
+        .populate('customer', '_id name phone')
+        .populate('rider', '_id name username')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return orders;
+    },
+
+    async riderEarningsGraph(_, { riderId, page = 1, limit = 10, startDate, endDate }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify rider access
+      if (context.user.role !== 'rider' || context.user._id.toString() !== riderId) {
+        throw new Error('Access denied');
+      }
+
+      // Build query
+      const orderQuery = { rider: riderId, isActive: true, orderStatus: 'delivered' };
+      if (startDate || endDate) {
+        orderQuery.deliveredAt = {};
+        if (startDate) orderQuery.deliveredAt.$gte = new Date(startDate);
+        if (endDate) orderQuery.deliveredAt.$lte = new Date(endDate);
+      }
+
+      const orders = await Order.find(orderQuery)
+        .sort({ deliveredAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean();
+
+      const totalCount = await Order.countDocuments(orderQuery);
+
+      // Group by date and calculate earnings
+      const earningsByDate = {};
+      orders.forEach(order => {
+        const date = order.deliveredAt ? new Date(order.deliveredAt).toISOString().split('T')[0] : new Date(order.createdAt).toISOString().split('T')[0];
+        if (!earningsByDate[date]) {
+          earningsByDate[date] = {
+            totalEarningsSum: 0,
+            totalTipsSum: 0,
+            totalDeliveries: 0,
+            totalHours: 0,
+            earningsArray: []
+          };
+        }
+        const deliveryFee = order.deliveryCharges || 0;
+        const tip = order.tipping || 0;
+        const totalEarnings = deliveryFee + tip;
+        
+        earningsByDate[date].totalEarningsSum += totalEarnings;
+        earningsByDate[date].totalTipsSum += tip;
+        earningsByDate[date].totalDeliveries += 1;
+        earningsByDate[date].earningsArray.push({
+          tip,
+          deliveryFee,
+          totalEarnings,
+          date,
+          orderDetails: {
+            orderType: order.isPickedUp ? 'PICKUP' : 'DELIVERY',
+            orderId: order.orderId || '',
+            paymentMethod: order.paymentMethod?.toUpperCase() || 'CASH'
+          }
+        });
+      });
+
+      // Convert to array format
+      const earnings = Object.keys(earningsByDate).map(date => ({
+        _id: date,
+        date,
+        totalEarningsSum: earningsByDate[date].totalEarningsSum,
+        totalTipsSum: earningsByDate[date].totalTipsSum,
+        totalDeliveries: earningsByDate[date].totalDeliveries,
+        totalHours: earningsByDate[date].totalHours,
+        earningsArray: earningsByDate[date].earningsArray
+      }));
+
+      return {
+        totalCount,
+        earnings
+      };
+    },
+
+    async riderCurrentWithdrawRequest(_, { riderId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify rider access
+      if (context.user.role !== 'rider' || context.user._id.toString() !== riderId) {
+        throw new Error('Access denied');
+      }
+
+      // Placeholder - implement actual withdraw request model if exists
+      // For now, return null as withdraw requests may not be implemented yet
+      return null;
+    },
+
+    async createRiderWithdrawRequest(_, { requestAmount }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'rider') {
+        throw new Error('Only riders can create withdraw requests');
+      }
+
+      const rider = await User.findById(context.user._id);
+      if (!rider || !rider.riderProfile) {
+        throw new Error('Rider profile not found');
+      }
+
+      const currentWallet = rider.riderProfile.currentWalletAmount || 0;
+      
+      if (requestAmount > currentWallet) {
+        throw new Error('Insufficient wallet balance');
+      }
+
+      if (requestAmount < 10) {
+        throw new Error('Minimum withdraw amount is ₹10');
+      }
+
+      // Check for existing pending request
+      // Note: This is a placeholder - implement WithdrawRequest model if needed
+      // For now, we'll just update the rider's wallet
+      
+      // Update wallet amounts
+      rider.riderProfile.currentWalletAmount = currentWallet - requestAmount;
+      rider.riderProfile.withdrawnWalletAmount = (rider.riderProfile.withdrawnWalletAmount || 0) + requestAmount;
+      
+      await rider.save();
+
+      // Return mock withdraw request (implement actual model if needed)
+      return {
+        _id: require('crypto').randomUUID(),
+        requestAmount,
+        status: 'pending',
+        createdAt: new Date(),
+        userId: rider._id.toString()
+      };
+    },
+
     async storeEarningsGraph(_, { storeId, page = 1, limit = 10, startDate, endDate }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
@@ -2237,6 +2399,70 @@ const resolvers = {
         email: user.email,
         phone: user.phone,
         isNewUser: false // Could be enhanced to detect new users
+      };
+    },
+
+    async riderLogin(_, { username, password, notificationToken, timeZone }) {
+      if (!username || !password) {
+        throw new Error('Username and password are required');
+      }
+
+      // Find rider by username (stored in metadata.username)
+      const user = await User.findOne({
+        role: 'rider',
+        'metadata.username': username
+      }).select('+password');
+
+      if (!user) {
+        throw new Error('Invalid credentials');
+      }
+
+      const isMatch = await user.matchPassword(password);
+      if (!isMatch) {
+        throw new Error('Invalid credentials');
+      }
+
+      if (user.isActive === false) {
+        throw new Error('Account is deactivated');
+      }
+
+      // Update notification token if provided
+      if (notificationToken) {
+        if (!user.pushTokens) {
+          user.pushTokens = [];
+        }
+        if (!user.pushTokens.includes(notificationToken)) {
+          user.pushTokens.push(notificationToken);
+        }
+        user.notificationToken = notificationToken;
+      }
+
+      // Update timezone if provided
+      if (timeZone) {
+        user.timeZone = timeZone;
+      }
+
+      await user.save();
+
+      const token = signToken({ id: user._id, role: user.role });
+      const tokenExpiration = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+
+      auditLogger.logEvent({
+        category: 'auth',
+        action: 'rider_login',
+        userId: user._id.toString(),
+        metadata: { username }
+      });
+
+      return {
+        userId: user._id.toString(),
+        token,
+        tokenExpiration,
+        isActive: user.isActive,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        isNewUser: false
       };
     },
 
