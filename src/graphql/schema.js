@@ -119,9 +119,11 @@ const typeDefs = gql`
     addons: [Addon]
     zone: Zone
     phone: String
+    email: String
     restaurantUrl: String
     stripeDetailsSubmitted: Boolean
     commissionRate: Float
+    deliveryCharges: Float
     username: String
     password: String
     sections: [String]
