@@ -25,6 +25,7 @@ const typeDefs = gql`
     price: Float
     discounted: Float
     addons: [String]
+    isOutOfStock: Boolean
   }
 
   type AddonOption {
@@ -59,6 +60,8 @@ const typeDefs = gql`
   type Category {
     _id: ID
     title: String
+    description: String
+    image: String
     foods: [Food]
     createdAt: Date
     updatedAt: Date
@@ -610,6 +613,13 @@ const typeDefs = gql`
     totalPages: Int
   }
 
+  type PaginationResponse {
+    total: Int
+    pageSize: Int
+    pageNo: Int
+    totalPages: Int
+  }
+
   type WithdrawRequest {
     _id: ID
     requestAmount: Float
@@ -627,6 +637,7 @@ const typeDefs = gql`
   type WithdrawRequestResponse {
     success: Boolean
     message: String
+    pagination: PaginationResponse
     data: [WithdrawRequest]
   }
 
@@ -723,6 +734,36 @@ const typeDefs = gql`
     total: Float
     # Array format for frontend
     items: [DashboardSalesByTypeItem]
+  }
+
+  type RestaurantDashboardOrdersSalesStats {
+    totalOrders: Int
+    totalSales: Float
+    totalCODOrders: Int
+    totalCardOrders: Int
+  }
+
+  type RestaurantDashboardSalesOrderCountDetailsByYear {
+    salesAmount: Float
+    ordersCount: Int
+  }
+
+  type PaymentMethodSalesData {
+    _type: String
+    data: PaymentMethodSalesDataDetails
+  }
+
+  type PaymentMethodSalesDataDetails {
+    total_orders: Int
+    total_sales: Float
+    total_sales_without_delivery: Float
+    total_delivery_fee: Float
+  }
+
+  type DashboardOrderSalesDetailsByPaymentMethod {
+    all: PaymentMethodSalesData
+    cod: PaymentMethodSalesData
+    card: PaymentMethodSalesData
   }
 
   type LicenseDetails {
@@ -916,6 +957,7 @@ const typeDefs = gql`
     myOrders: [Order]
     orders(offset: Int): [Order]
     order(id: String!): Order
+    reviews: [Review]
     reviewsByRestaurant(restaurant: String!): ReviewData
     taxes: [Tax]
     users: [User]
@@ -949,6 +991,9 @@ const typeDefs = gql`
     getDashboardUsersByYear(year: Int): DashboardUsersResponse
     getDashboardOrdersByType(dateFilter: DateFilter): [DashboardOrdersByTypeItem]
     getDashboardSalesByType(dateFilter: DateFilter): [DashboardSalesByTypeItem]
+    getRestaurantDashboardOrdersSalesStats(restaurant: String!, starting_date: String!, ending_date: String!, dateKeyword: String): RestaurantDashboardOrdersSalesStats
+    getRestaurantDashboardSalesOrderCountDetailsByYear(restaurant: String!, year: Int!): RestaurantDashboardSalesOrderCountDetailsByYear
+    getDashboardOrderSalesDetailsByPaymentMethod(restaurant: String!, starting_date: String!, ending_date: String!): DashboardOrderSalesDetailsByPaymentMethod
     vendors(filters: FiltersInput): [User]
     riders(filters: FiltersInput): [User]
     availableRiders(zoneId: String): [User]
@@ -960,14 +1005,16 @@ const typeDefs = gql`
     getVendor(vendorId: String!): User
     user(id: ID!): User
     allOrdersWithoutPagination(filters: FiltersInput): [Order]
+    ordersByRestIdWithoutPagination(restaurantId: String!, filters: FiltersInput): [Order]
     getActiveOrders(restaurantId: ID, page: Int, rowsPerPage: Int, actions: [String], search: String): ActiveOrdersResponse
     ordersByRestId(restaurantId: String!, filters: FiltersInput): [Order]
     ordersByUser(userId: ID!, page: Int, limit: Int): OrdersByUserResponse
     coupons: [Coupon]
+    restaurantCoupons(restaurantId: String!): [Coupon]
     tips: Tipping
     notifications(filters: FiltersInput): [Notification]
     auditLogs(filters: FiltersInput): AuditLogResponse
-    withdrawRequests(filters: FiltersInput): WithdrawRequestResponse
+    withdrawRequests(userType: UserTypeEnum, userId: String, pagination: PaginationInput, search: String): WithdrawRequestResponse
     getTicketUsers(filters: FiltersInput): [User]
     getTicketUsersWithLatest(filters: FiltersInput): [User]
     getSingleUserSupportTickets(userId: String!): [SupportTicket]
@@ -1168,6 +1215,9 @@ const typeDefs = gql`
     accountNumber: String
     accountName: String
     accountCode: String
+    bussinessRegNo: Int
+    companyRegNo: Int
+    taxRate: Float
   }
 
   input BussinessDetailsInput {
@@ -1175,6 +1225,9 @@ const typeDefs = gql`
     accountNumber: String
     accountName: String
     accountCode: String
+    bussinessRegNo: Int
+    companyRegNo: Int
+    taxRate: Float
   }
 
   input RestaurantInput {

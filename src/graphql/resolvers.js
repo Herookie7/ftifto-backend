@@ -564,6 +564,15 @@ const resolvers = {
     },
 
     // Reviews by restaurant
+    async reviews() {
+      return await Review.find({ isActive: true })
+        .populate('order')
+        .populate('user')
+        .populate('restaurant')
+        .sort({ createdAt: -1 })
+        .lean();
+    },
+
     async reviewsByRestaurant(_, { restaurant }) {
       const reviews = await Review.find({ restaurant, isActive: true })
         .populate('order')
@@ -1522,6 +1531,117 @@ const resolvers = {
       ];
     },
 
+    async getRestaurantDashboardOrdersSalesStats(_, { restaurant, starting_date, ending_date, dateKeyword }) {
+      const query = { restaurant, isActive: true };
+      
+      if (starting_date && ending_date) {
+        query.createdAt = {
+          $gte: new Date(starting_date),
+          $lte: new Date(ending_date)
+        };
+      } else if (dateKeyword) {
+        const now = new Date();
+        let startDate, endDate;
+        
+        switch (dateKeyword) {
+          case 'today':
+            startDate = new Date(now.setHours(0, 0, 0, 0));
+            endDate = new Date(now.setHours(23, 59, 59, 999));
+            break;
+          case 'week':
+            startDate = new Date(now.setDate(now.getDate() - 7));
+            endDate = new Date();
+            break;
+          case 'month':
+            startDate = new Date(now.setMonth(now.getMonth() - 1));
+            endDate = new Date();
+            break;
+          default:
+            startDate = null;
+            endDate = null;
+        }
+        
+        if (startDate && endDate) {
+          query.createdAt = { $gte: startDate, $lte: endDate };
+        }
+      }
+
+      const orders = await Order.find(query).lean();
+      
+      const totalOrders = orders.length;
+      const totalSales = orders.reduce((sum, order) => sum + (order.orderAmount || 0), 0);
+      const totalCODOrders = orders.filter(order => order.paymentMethod === 'cod' || order.paymentMethod === 'COD').length;
+      const totalCardOrders = orders.filter(order => order.paymentMethod === 'card' || order.paymentMethod === 'CARD').length;
+
+      return {
+        totalOrders,
+        totalSales,
+        totalCODOrders,
+        totalCardOrders
+      };
+    },
+
+    async getRestaurantDashboardSalesOrderCountDetailsByYear(_, { restaurant, year }) {
+      const startDate = new Date(year, 0, 1);
+      const endDate = new Date(year, 11, 31, 23, 59, 59, 999);
+      
+      const orders = await Order.find({
+        restaurant,
+        isActive: true,
+        createdAt: { $gte: startDate, $lte: endDate }
+      }).lean();
+
+      const salesAmount = orders.reduce((sum, order) => sum + (order.orderAmount || 0), 0);
+      const ordersCount = orders.length;
+
+      return {
+        salesAmount,
+        ordersCount
+      };
+    },
+
+    async getDashboardOrderSalesDetailsByPaymentMethod(_, { restaurant, starting_date, ending_date }) {
+      const query = {
+        restaurant,
+        isActive: true,
+        createdAt: {
+          $gte: new Date(starting_date),
+          $lte: new Date(ending_date)
+        }
+      };
+
+      const orders = await Order.find(query).lean();
+
+      const allData = {
+        total_orders: orders.length,
+        total_sales: orders.reduce((sum, order) => sum + (order.orderAmount || 0), 0),
+        total_sales_without_delivery: orders.reduce((sum, order) => sum + ((order.orderAmount || 0) - (order.deliveryFee || 0)), 0),
+        total_delivery_fee: orders.reduce((sum, order) => sum + (order.deliveryFee || 0), 0)
+      };
+
+      const codOrders = orders.filter(order => order.paymentMethod === 'cod' || order.paymentMethod === 'COD');
+      const codData = {
+        total_orders: codOrders.length,
+        total_sales: codOrders.reduce((sum, order) => sum + (order.orderAmount || 0), 0),
+        total_sales_without_delivery: codOrders.reduce((sum, order) => sum + ((order.orderAmount || 0) - (order.deliveryFee || 0)), 0),
+        total_delivery_fee: codOrders.reduce((sum, order) => sum + (order.deliveryFee || 0), 0)
+      };
+
+      const cardOrders = orders.filter(order => order.paymentMethod === 'card' || order.paymentMethod === 'CARD');
+      const cardData = {
+        total_orders: cardOrders.length,
+        total_sales: cardOrders.reduce((sum, order) => sum + (order.orderAmount || 0), 0),
+        total_sales_without_delivery: cardOrders.reduce((sum, order) => sum + ((order.orderAmount || 0) - (order.deliveryFee || 0)), 0),
+        total_delivery_fee: cardOrders.reduce((sum, order) => sum + (order.deliveryFee || 0), 0)
+      };
+
+      return {
+        all: { _type: 'all', data: allData },
+        cod: { _type: 'cod', data: codData },
+        card: { _type: 'card', data: cardData }
+      };
+    },
+
     async vendors(_, { filters }) {
       const query = { role: 'seller' };
       if (filters?.search) {
@@ -1746,6 +1866,24 @@ const resolvers = {
         .lean();
     },
 
+    async ordersByRestIdWithoutPagination(_, { restaurantId, filters }) {
+      const query = { restaurant: restaurantId, isActive: true };
+      if (filters?.search) {
+        query.$or = [
+          { orderId: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+      if (filters?.status) {
+        query.orderStatus = filters.status;
+      }
+
+      return await Order.find(query)
+        .populate('customer')
+        .populate('rider')
+        .sort({ createdAt: -1 })
+        .lean();
+    },
+
     async ordersByUser(_, { userId, page = 1, limit = 10 }) {
       const query = { customer: userId, isActive: true };
       
@@ -1780,6 +1918,13 @@ const resolvers = {
       return await Coupon.find().sort({ createdAt: -1 }).lean();
     },
 
+    async restaurantCoupons(_, { restaurantId }) {
+      return await Coupon.find({ restaurant: restaurantId, isActive: true })
+        .populate('restaurant')
+        .sort({ createdAt: -1 })
+        .lean();
+    },
+
     async tips() {
       // Placeholder - implement Tipping configuration if exists
       return {
@@ -1804,11 +1949,47 @@ const resolvers = {
       };
     },
 
-    async withdrawRequests(_, { filters }) {
+    async withdrawRequests(_, { userType, userId, pagination, search }) {
+      const query = {};
+      
+      if (userType) {
+        if (userType === 'SELLER') {
+          const restaurants = await Restaurant.find({ owner: userId }).select('_id').lean();
+          query.storeId = { $in: restaurants.map(r => r._id.toString()) };
+        } else if (userType === 'RIDER') {
+          query.riderId = userId;
+        }
+      } else if (userId) {
+        // If userId provided without userType, search both
+        const restaurants = await Restaurant.find({ owner: userId }).select('_id').lean();
+        query.$or = [
+          { storeId: { $in: restaurants.map(r => r._id.toString()) } },
+          { riderId: userId }
+        ];
+      }
+
+      if (search) {
+        query.$or = [
+          ...(query.$or || []),
+          { requestId: { $regex: search, $options: 'i' } }
+        ];
+      }
+
       // Placeholder - implement WithdrawRequest model if exists
+      // For now, return empty data with pagination
+      const pageSize = pagination?.pageSize || 10;
+      const pageNo = pagination?.pageNo || 1;
+      const total = 0; // Placeholder
+
       return {
         success: true,
         message: 'Success',
+        pagination: {
+          total,
+          pageSize,
+          pageNo,
+          totalPages: Math.ceil(total / pageSize)
+        },
         data: []
       };
     },
