@@ -126,6 +126,7 @@ const typeDefs = gql`
     restaurantUrl: String
     stripeDetailsSubmitted: Boolean
     commissionRate: Float
+    commissionType: String
     deliveryCharges: Float
     username: String
     password: String
@@ -173,6 +174,7 @@ const typeDefs = gql`
     sections: [String]
     stripeDetailsSubmitted: Boolean
     commissionRate: Float
+    commissionType: String
     notificationToken: String
     enableNotification: Boolean
     distanceWithCurrentLocation: Float
@@ -1108,6 +1110,7 @@ const typeDefs = gql`
     
     # Admin app mutations
     markWebNotificationsAsRead: [WebNotification]
+    updateCommission(id: String!, commissionType: String!, commissionRate: Float!): Restaurant
   }
 
   type Subscription {

@@ -962,14 +962,27 @@ const resolvers = {
 
       const total = await Order.countDocuments(orderQuery);
       
+      // Helper function to calculate commission based on type
+      const calculateCommission = (orderAmount, commissionRate, commissionType) => {
+        if (!commissionRate || commissionRate === 0) return 0;
+        if (commissionType === 'fixed') {
+          return commissionRate;
+        } else {
+          // percentage (default for backward compatibility)
+          return (orderAmount * commissionRate) / 100;
+        }
+      };
+
+      const commissionType = restaurant.commissionType || 'percentage';
+      
       // Calculate earnings
       const totalEarnings = orders.reduce((sum, order) => {
-        const commission = (order.orderAmount * (restaurant.commissionRate || 0)) / 100;
+        const commission = calculateCommission(order.orderAmount, restaurant.commissionRate || 0, commissionType);
         return sum + (order.orderAmount - commission);
       }, 0);
 
       const platformTotal = orders.reduce((sum, order) => {
-        const commission = (order.orderAmount * (restaurant.commissionRate || 0)) / 100;
+        const commission = calculateCommission(order.orderAmount, restaurant.commissionRate || 0, commissionType);
         return sum + commission;
       }, 0);
 
@@ -978,7 +991,7 @@ const resolvers = {
       }, 0);
 
       const earnings = orders.map(order => {
-        const commission = (order.orderAmount * (restaurant.commissionRate || 0)) / 100;
+        const commission = calculateCommission(order.orderAmount, restaurant.commissionRate || 0, commissionType);
         const storeEarnings = order.orderAmount - commission;
         const riderEarnings = (order.deliveryCharges || 0) + (order.tipping || 0);
 
@@ -3846,6 +3859,45 @@ const resolvers = {
         message: 'Restaurant information updated successfully',
         data: restaurant
       };
+    },
+
+    async updateCommission(_, { id, commissionType, commissionRate }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Validate commissionType
+      if (commissionType !== 'fixed' && commissionType !== 'percentage') {
+        throw new Error('Commission type must be either "fixed" or "percentage"');
+      }
+
+      // Validate commissionRate
+      if (commissionRate < 0) {
+        throw new Error('Commission rate cannot be negative');
+      }
+
+      if (commissionType === 'percentage' && commissionRate > 100) {
+        throw new Error('Percentage commission rate cannot exceed 100');
+      }
+
+      const restaurant = await Restaurant.findById(id);
+      if (!restaurant) {
+        throw new Error('Restaurant not found');
+      }
+
+      // Check if user is admin or restaurant owner
+      const isAdmin = context.user.role === 'admin';
+      const isOwner = restaurant.owner.toString() === context.user._id.toString();
+      
+      if (!isAdmin && !isOwner) {
+        throw new Error('You do not have permission to update this restaurant\'s commission');
+      }
+
+      restaurant.commissionType = commissionType;
+      restaurant.commissionRate = commissionRate;
+      await restaurant.save();
+
+      return restaurant;
     },
 
     async createCategory(_, { restaurantId, title, description, image, order }, context) {

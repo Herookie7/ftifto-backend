@@ -83,6 +83,11 @@ const restaurantSchema = new mongoose.Schema(
     deliveryCharges: { type: Number, default: 0 },
     tax: { type: Number, default: 0 },
     commissionRate: { type: Number, default: 0 },
+    commissionType: { 
+      type: String, 
+      enum: ['fixed', 'percentage'], 
+      default: 'percentage' 
+    },
     isAvailable: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true },
     rating: { type: Number, default: 0 },
