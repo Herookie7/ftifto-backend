@@ -16,6 +16,7 @@ const restaurantRoutes = require('../restaurantRoutes');
 const categoryRoutes = require('../categoryRoutes');
 const multivendorAuthRoutes = require('../authRoutes');
 const addressRoutes = require('../addressRoutes');
+const uploadRoutes = require('../upload.routes');
 
 const router = express.Router();
 
@@ -66,6 +67,9 @@ router.use('/', multivendorAuthRoutes);
 
 // Address routes - accessible at /api/v1/address/*
 router.use('/', addressRoutes);
+
+// Upload routes - accessible at /api/v1/upload/*
+router.use('/upload', uploadRoutes);
 
 module.exports = router;
 

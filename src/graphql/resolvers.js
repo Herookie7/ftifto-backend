@@ -3558,11 +3558,31 @@ const resolvers = {
       if (restaurantInput.name !== undefined) restaurant.name = restaurantInput.name;
       if (restaurantInput.address !== undefined) restaurant.address = restaurantInput.address;
       if (restaurantInput.phone !== undefined) restaurant.phone = restaurantInput.phone;
+      if (restaurantInput.email !== undefined) restaurant.email = restaurantInput.email;
       if (restaurantInput.description !== undefined) restaurant.description = restaurantInput.description;
       if (restaurantInput.image !== undefined) restaurant.image = restaurantInput.image;
       if (restaurantInput.logo !== undefined) restaurant.logo = restaurantInput.logo;
       if (restaurantInput.deliveryTime !== undefined) restaurant.deliveryTime = restaurantInput.deliveryTime;
       if (restaurantInput.minimumOrder !== undefined) restaurant.minimumOrder = restaurantInput.minimumOrder;
+      if (restaurantInput.deliveryCharges !== undefined) restaurant.deliveryCharges = restaurantInput.deliveryCharges;
+      
+      // Update location coordinates if provided
+      if (restaurantInput.location !== undefined && Array.isArray(restaurantInput.location)) {
+        if (restaurantInput.location.length === 2) {
+          const [longitude, latitude] = restaurantInput.location;
+          // Validate coordinates
+          if (longitude >= -180 && longitude <= 180 && latitude >= -90 && latitude <= 90) {
+            restaurant.location = {
+              type: 'Point',
+              coordinates: [longitude, latitude]
+            };
+          } else {
+            throw new Error('Invalid coordinates. Longitude must be between -180 and 180, latitude must be between -90 and 90');
+          }
+        } else {
+          throw new Error('Location must be an array of [longitude, latitude]');
+        }
+      }
 
       await restaurant.save();
 

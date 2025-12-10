@@ -6,7 +6,8 @@ const {
   updateSellerAvailability,
   updateOrderPreparationTime,
   getSellerMenu,
-  bulkUpdateProductAvailability
+  bulkUpdateProductAvailability,
+  updateRestaurant
 } = require('../controllers/seller.controller');
 const { protect, authorizeRoles } = require('../middleware/auth');
 
@@ -18,6 +19,24 @@ router.use(authorizeRoles('seller'));
 router.get('/profile', getSellerProfile);
 router.get('/orders', getSellerOrders);
 router.get('/menu', getSellerMenu);
+
+router.put(
+  '/restaurant',
+  [
+    body('name').optional().isString().trim(),
+    body('address').optional().isString().trim(),
+    body('phone').optional().isString().trim(),
+    body('email').optional().isEmail().normalizeEmail(),
+    body('description').optional().isString().trim(),
+    body('image').optional().isString().trim(),
+    body('logo').optional().isString().trim(),
+    body('deliveryTime').optional().isInt({ min: 0 }),
+    body('minimumOrder').optional().isFloat({ min: 0 }),
+    body('deliveryCharges').optional().isFloat({ min: 0 }),
+    body('location').optional().isArray({ min: 2, max: 2 }).withMessage('Location must be [longitude, latitude]')
+  ],
+  updateRestaurant
+);
 
 router.patch(
   '/availability',

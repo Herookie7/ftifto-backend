@@ -1178,11 +1178,14 @@ const typeDefs = gql`
     name: String
     address: String
     phone: String
+    email: String
     description: String
     image: String
     logo: String
     deliveryTime: Int
     minimumOrder: Float
+    deliveryCharges: Float
+    location: [Float]
   }
 
   input CuisineInput {

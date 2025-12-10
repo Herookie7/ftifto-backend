@@ -141,12 +141,62 @@ const bulkUpdateProductAvailability = asyncHandler(async (req, res) => {
   res.json({ message: 'Menu availability updated' });
 });
 
+const updateRestaurant = asyncHandler(async (req, res) => {
+  const restaurant = await Restaurant.findOne({ owner: req.user._id });
+
+  if (!restaurant) {
+    res.status(404);
+    throw new Error('Restaurant profile not found');
+  }
+
+  // Update allowed fields
+  const allowedFields = [
+    'name', 'address', 'phone', 'email', 'description', 'image', 'logo',
+    'deliveryTime', 'minimumOrder', 'deliveryCharges'
+  ];
+
+  allowedFields.forEach(field => {
+    if (req.body[field] !== undefined) {
+      restaurant[field] = req.body[field];
+    }
+  });
+
+  // Handle location coordinates
+  if (req.body.location !== undefined) {
+    if (Array.isArray(req.body.location) && req.body.location.length === 2) {
+      const [longitude, latitude] = req.body.location;
+      // Validate coordinates
+      if (longitude >= -180 && longitude <= 180 && latitude >= -90 && latitude <= 90) {
+        restaurant.location = {
+          type: 'Point',
+          coordinates: [longitude, latitude]
+        };
+      } else {
+        res.status(400);
+        throw new Error('Invalid coordinates. Longitude must be between -180 and 180, latitude must be between -90 and 90');
+      }
+    } else {
+      res.status(400);
+      throw new Error('Location must be an array of [longitude, latitude]');
+    }
+  }
+
+  await restaurant.save();
+
+  res.json({
+    success: true,
+    message: 'Restaurant updated successfully',
+    restaurant
+  });
+});
+
 module.exports = {
   getSellerProfile,
   getSellerOrders,
   updateSellerAvailability,
   updateOrderPreparationTime,
   getSellerMenu,
-  bulkUpdateProductAvailability
+  bulkUpdateProductAvailability,
+  updateRestaurant
 };
 
