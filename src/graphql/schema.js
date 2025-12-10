@@ -1037,6 +1037,7 @@ const typeDefs = gql`
     createActivity(groupId: String!, module: String!, screenPath: String!, type: String!, details: String!): String
     
     # Seller/Restaurant mutations
+    createRestaurant(restaurant: RestaurantInput!, owner: ID!): Restaurant
     createWithdrawRequest(requestAmount: Float!, userId: String!): WithdrawRequest
     updateTimings(id: String!, openingTimes: [TimingsInput!]!): Restaurant
     toggleStoreAvailability(restaurantId: String!): Restaurant
@@ -1174,6 +1175,26 @@ const typeDefs = gql`
     accountNumber: String
     accountName: String
     accountCode: String
+  }
+
+  input RestaurantInput {
+    name: String!
+    address: String!
+    phone: String
+    email: String
+    description: String
+    image: String
+    logo: String
+    deliveryTime: Int
+    minimumOrder: Float
+    deliveryCharges: Float
+    location: [Float]
+    username: String
+    password: String
+    shopType: String
+    salesTax: Float
+    tax: Float
+    cuisines: [String]
   }
 
   input RestaurantInfoInput {

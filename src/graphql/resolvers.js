@@ -3371,6 +3371,79 @@ const resolvers = {
     },
 
     // Seller/Restaurant mutations
+    async createRestaurant(_, { restaurant, owner }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify user is admin or the owner themselves
+      if (context.user.role !== 'admin' && context.user._id.toString() !== owner.toString()) {
+        throw new Error('Unauthorized to create restaurant for this owner');
+      }
+
+      // Verify owner exists and is a seller
+      const ownerUser = await User.findById(owner);
+      if (!ownerUser) {
+        throw new Error('Owner not found');
+      }
+      if (ownerUser.role !== 'seller') {
+        throw new Error('Restaurant owner must be a seller');
+      }
+
+      // Check if owner already has a restaurant
+      const existingRestaurant = await Restaurant.findOne({ owner });
+      if (existingRestaurant) {
+        throw new Error('Owner already has a restaurant');
+      }
+
+      // Prepare restaurant data
+      const restaurantData = {
+        name: restaurant.name,
+        address: restaurant.address,
+        phone: restaurant.phone,
+        email: restaurant.email,
+        description: restaurant.description,
+        image: restaurant.image,
+        logo: restaurant.logo,
+        deliveryTime: restaurant.deliveryTime || 30,
+        minimumOrder: restaurant.minimumOrder || 0,
+        deliveryCharges: restaurant.deliveryCharges || 0,
+        username: restaurant.username,
+        password: restaurant.password,
+        shopType: restaurant.shopType,
+        tax: restaurant.tax || restaurant.salesTax || 0,
+        cuisines: restaurant.cuisines || [],
+        owner: owner
+      };
+
+      // Handle location coordinates
+      if (restaurant.location && Array.isArray(restaurant.location) && restaurant.location.length === 2) {
+        const [longitude, latitude] = restaurant.location;
+        if (
+          typeof longitude === 'number' && longitude >= -180 && longitude <= 180 &&
+          typeof latitude === 'number' && latitude >= -90 && latitude <= 90
+        ) {
+          restaurantData.location = {
+            type: 'Point',
+            coordinates: [longitude, latitude]
+          };
+        }
+      }
+
+      // Create restaurant
+      const newRestaurant = await Restaurant.create(restaurantData);
+
+      // Update owner's seller profile
+      ownerUser.sellerProfile = {
+        ...ownerUser.sellerProfile,
+        restaurant: newRestaurant._id,
+        businessName: newRestaurant.name
+      };
+      await ownerUser.save();
+
+      return newRestaurant;
+    },
+
     async createWithdrawRequest(_, { requestAmount, userId }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
