@@ -1266,50 +1266,6 @@ const resolvers = {
       return null;
     },
 
-    async createRiderWithdrawRequest(_, { requestAmount }, context) {
-      if (!context.user) {
-        throw new Error('Authentication required');
-      }
-
-      if (context.user.role !== 'rider') {
-        throw new Error('Only riders can create withdraw requests');
-      }
-
-      const rider = await User.findById(context.user._id);
-      if (!rider || !rider.riderProfile) {
-        throw new Error('Rider profile not found');
-      }
-
-      const currentWallet = rider.riderProfile.currentWalletAmount || 0;
-      
-      if (requestAmount > currentWallet) {
-        throw new Error('Insufficient wallet balance');
-      }
-
-      if (requestAmount < 10) {
-        throw new Error('Minimum withdraw amount is ₹10');
-      }
-
-      // Check for existing pending request
-      // Note: This is a placeholder - implement WithdrawRequest model if needed
-      // For now, we'll just update the rider's wallet
-      
-      // Update wallet amounts
-      rider.riderProfile.currentWalletAmount = currentWallet - requestAmount;
-      rider.riderProfile.withdrawnWalletAmount = (rider.riderProfile.withdrawnWalletAmount || 0) + requestAmount;
-      
-      await rider.save();
-
-      // Return mock withdraw request (implement actual model if needed)
-      return {
-        _id: require('crypto').randomUUID(),
-        requestAmount,
-        status: 'pending',
-        createdAt: new Date(),
-        userId: rider._id.toString()
-      };
-    },
-
     async storeEarningsGraph(_, { storeId, page = 1, limit = 10, startDate, endDate }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
@@ -3367,6 +3323,51 @@ const resolvers = {
       // Placeholder for activity tracking
       // In production, implement actual activity logging
       return 'success';
+    },
+
+    // Rider mutations
+    async createRiderWithdrawRequest(_, { requestAmount }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'rider') {
+        throw new Error('Only riders can create withdraw requests');
+      }
+
+      const rider = await User.findById(context.user._id);
+      if (!rider || !rider.riderProfile) {
+        throw new Error('Rider profile not found');
+      }
+
+      const currentWallet = rider.riderProfile.currentWalletAmount || 0;
+      
+      if (requestAmount > currentWallet) {
+        throw new Error('Insufficient wallet balance');
+      }
+
+      if (requestAmount < 10) {
+        throw new Error('Minimum withdraw amount is ₹10');
+      }
+
+      // Check for existing pending request
+      // Note: This is a placeholder - implement WithdrawRequest model if needed
+      // For now, we'll just update the rider's wallet
+      
+      // Update wallet amounts
+      rider.riderProfile.currentWalletAmount = currentWallet - requestAmount;
+      rider.riderProfile.withdrawnWalletAmount = (rider.riderProfile.withdrawnWalletAmount || 0) + requestAmount;
+      
+      await rider.save();
+
+      // Return mock withdraw request (implement actual model if needed)
+      return {
+        _id: require('crypto').randomUUID(),
+        requestAmount,
+        status: 'pending',
+        createdAt: new Date(),
+        userId: rider._id.toString()
+      };
     },
 
     // Seller/Restaurant mutations
