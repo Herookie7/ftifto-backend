@@ -3,9 +3,11 @@ const { body } = require('express-validator');
 const {
   getDashboardSummary,
   getRestaurants,
+  getRestaurant,
   createRestaurant,
   updateRestaurant,
   toggleRestaurantAvailability,
+  deleteRestaurant,
   getMaintenanceStatus,
   updateMaintenanceMode
 } = require('../controllers/admin.controller');
@@ -18,6 +20,7 @@ router.use(authorizeRoles('admin'));
 
 router.get('/dashboard', getDashboardSummary);
 router.get('/restaurants', getRestaurants);
+router.get('/restaurants/:id', getRestaurant);
 
 router.post(
   '/restaurants',
@@ -40,6 +43,7 @@ router.put(
 );
 
 router.post('/restaurants/:id/toggle', toggleRestaurantAvailability);
+router.delete('/restaurants/:id', deleteRestaurant);
 
 router.get('/maintenance', getMaintenanceStatus);
 router.post(

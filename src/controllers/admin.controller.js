@@ -68,6 +68,18 @@ const getRestaurants = asyncHandler(async (req, res) => {
   res.json(restaurants);
 });
 
+const getRestaurant = asyncHandler(async (req, res) => {
+  const restaurant = await Restaurant.findById(req.params.id)
+    .populate('owner', 'name email phone role');
+
+  if (!restaurant) {
+    res.status(404);
+    throw new Error('Restaurant not found');
+  }
+
+  res.json(restaurant);
+});
+
 const createRestaurant = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -129,6 +141,62 @@ const toggleRestaurantAvailability = asyncHandler(async (req, res) => {
   res.json(restaurant);
 });
 
+const deleteRestaurant = asyncHandler(async (req, res) => {
+  const Product = require('../models/Product');
+  
+  const restaurant = await Restaurant.findById(req.params.id);
+
+  if (!restaurant) {
+    res.status(404);
+    throw new Error('Restaurant not found');
+  }
+
+  // Check for associated orders
+  const orderCount = await Order.countDocuments({ restaurant: restaurant._id });
+  
+  // Check for associated products
+  const productCount = await Product.countDocuments({ restaurant: restaurant._id });
+
+  // Soft delete by setting isActive to false instead of hard delete
+  // This preserves data integrity and allows for recovery if needed
+  restaurant.isActive = false;
+  restaurant.isAvailable = false;
+  await restaurant.save();
+
+  // Update owner's sellerProfile if exists
+  if (restaurant.owner) {
+    const owner = await User.findById(restaurant.owner);
+    if (owner && owner.sellerProfile) {
+      owner.sellerProfile = {
+        ...owner.sellerProfile,
+        restaurant: null,
+        businessName: null
+      };
+      await owner.save();
+    }
+  }
+
+  auditLogger.logEvent({
+    category: 'admin',
+    action: 'restaurant_deleted',
+    userId: req.user?._id ? req.user._id.toString() : undefined,
+    entityType: 'restaurant',
+    entityId: restaurant._id.toString(),
+    metadata: {
+      restaurantName: restaurant.name,
+      orderCount,
+      productCount
+    }
+  });
+
+  res.json({
+    message: 'Restaurant deleted successfully',
+    restaurant,
+    associatedOrders: orderCount,
+    associatedProducts: productCount
+  });
+});
+
 const getMaintenanceStatus = asyncHandler(async (req, res) => {
   const state = await maintenanceService.getState();
   res.json(state);
@@ -167,9 +235,11 @@ const updateMaintenanceMode = asyncHandler(async (req, res) => {
 module.exports = {
   getDashboardSummary,
   getRestaurants,
+  getRestaurant,
   createRestaurant,
   updateRestaurant,
   toggleRestaurantAvailability,
+  deleteRestaurant,
   getMaintenanceStatus,
   updateMaintenanceMode
 };
