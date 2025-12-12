@@ -69,7 +69,7 @@ const typeDefs = gql`
 
   type Review {
     _id: ID
-    rating: Int
+    rating: Float
     description: String
     isActive: Boolean
     createdAt: Date
@@ -1129,7 +1129,7 @@ const typeDefs = gql`
 
   input ReviewInput {
     order: String!
-    rating: Int!
+    rating: Float!
     description: String
   }
 
