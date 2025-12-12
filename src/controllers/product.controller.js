@@ -46,7 +46,7 @@ const createProduct = asyncHandler(async (req, res) => {
     return res.status(422).json({ errors: errors.array() });
   }
 
-  const { restaurant: restaurantId } = req.body;
+  const { restaurant: restaurantId, price, title, variations } = req.body;
 
   const restaurant = await Restaurant.findById(restaurantId);
 
@@ -55,7 +55,26 @@ const createProduct = asyncHandler(async (req, res) => {
     throw new Error('Restaurant not found');
   }
 
-  const product = await Product.create(req.body);
+  // Auto-create default variation if none provided
+  let productData = { ...req.body };
+  if (!variations || variations.length === 0) {
+    const slug = title?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'item';
+    productData.variations = [{
+      title: 'Standard',
+      price: price || 0,
+      discounted: req.body.discountedPrice || undefined,
+      default: true,
+      sku: `${slug}-std`
+    }];
+  } else {
+    // Ensure at least one variation is marked as default
+    const hasDefault = variations.some(v => v.default === true);
+    if (!hasDefault && variations.length > 0) {
+      productData.variations[0].default = true;
+    }
+  }
+
+  const product = await Product.create(productData);
 
   res.status(201).json(product);
 });

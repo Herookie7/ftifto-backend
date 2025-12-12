@@ -5,9 +5,11 @@ const variationSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
     price: { type: Number, required: true },
-    discounted: { type: Number }
+    discounted: { type: Number },
+    default: { type: Boolean, default: false },
+    sku: { type: String, trim: true }
   },
-  { _id: false }
+  { _id: true }
 );
 
 const addonOptionSchema = new mongoose.Schema(
@@ -82,9 +84,29 @@ const productSchema = new mongoose.Schema(
 );
 
 productSchema.pre('save', function generateSlug(next) {
+  // Generate slug first
   if (!this.slug && this.title) {
     this.slug = slugify(this.title, { lower: true, strict: true });
   }
+  
+  // Auto-create default variation if no variations provided
+  if (!this.variations || this.variations.length === 0) {
+    const slugForSku = this.slug || (this.title ? slugify(this.title, { lower: true, strict: true }) : 'item');
+    this.variations = [{
+      title: 'Standard',
+      price: this.price || 0,
+      discounted: this.discountedPrice || undefined,
+      default: true,
+      sku: `${slugForSku}-std`
+    }];
+  } else {
+    // Ensure at least one variation is marked as default
+    const hasDefault = this.variations.some(v => v.default === true);
+    if (!hasDefault && this.variations.length > 0) {
+      this.variations[0].default = true;
+    }
+  }
+  
   next();
 });
 
