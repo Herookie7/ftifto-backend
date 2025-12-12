@@ -1,8 +1,10 @@
 const asyncHandler = require('express-async-handler');
 const Order = require('../models/Order');
 const User = require('../models/User');
+const Restaurant = require('../models/Restaurant');
 const { emitRiderLocation, emitOrderUpdate } = require('../realtime/emitter');
 const { sendAnalyticsEvent } = require('../services/notifications.service');
+const { processFinancialSettlement } = require('../utils/financialSettlement');
 
 const getAssignedOrders = asyncHandler(async (req, res) => {
   const { status } = req.query;
@@ -128,6 +130,35 @@ const confirmDelivery = asyncHandler(async (req, res) => {
   });
 
   await order.save();
+
+  // Process financial settlement
+  try {
+    // Fetch required data for settlement
+    const [restaurant, seller, rider] = await Promise.all([
+      Restaurant.findById(order.restaurant),
+      order.seller ? User.findById(order.seller) : null,
+      User.findById(req.user._id)
+    ]);
+
+    // Only process settlement if all required data is available
+    if (restaurant && seller && rider) {
+      await processFinancialSettlement(order, restaurant, seller, rider);
+    } else {
+      console.warn('Financial settlement skipped: missing required data', {
+        orderId: order._id,
+        hasRestaurant: !!restaurant,
+        hasSeller: !!seller,
+        hasRider: !!rider
+      });
+    }
+  } catch (settlementError) {
+    // Log error but don't fail the delivery
+    console.error('Financial settlement error:', {
+      orderId: order._id,
+      error: settlementError.message,
+      stack: settlementError.stack
+    });
+  }
 
   emitOrderUpdate(order._id.toString(), {
     action: 'delivered',

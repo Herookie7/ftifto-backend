@@ -643,6 +643,12 @@ const typeDefs = gql`
     data: [WithdrawRequest]
   }
 
+  type UpdateWithdrawRequestResponse {
+    success: Boolean
+    message: String
+    data: WithdrawRequest
+  }
+
   type DeliveryInfo {
     minDeliveryFee: Float
     deliveryDistance: Float
@@ -1111,6 +1117,7 @@ const typeDefs = gql`
     # Admin app mutations
     markWebNotificationsAsRead: [WebNotification]
     updateCommission(id: String!, commissionType: String!, commissionRate: Float!): Restaurant
+    updateWithdrawReqStatus(id: ID!, status: String!): UpdateWithdrawRequestResponse
   }
 
   type Subscription {

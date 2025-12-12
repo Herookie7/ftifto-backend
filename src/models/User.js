@@ -49,7 +49,10 @@ const sellerProfileSchema = new mongoose.Schema(
     businessName: { type: String, trim: true },
     restaurant: { type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant' },
     notificationToken: { type: String, trim: true },
-    enableNotification: { type: Boolean, default: true }
+    enableNotification: { type: Boolean, default: true },
+    currentWalletAmount: { type: Number, default: 0 },
+    totalWalletAmount: { type: Number, default: 0 },
+    withdrawnWalletAmount: { type: Number, default: 0 }
   },
   { _id: false }
 );

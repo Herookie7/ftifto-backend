@@ -11,12 +11,14 @@ const Section = require('../models/Section');
 const Zone = require('../models/Zone');
 const Banner = require('../models/Banner');
 const Coupon = require('../models/Coupon');
+const WithdrawRequest = require('../models/WithdrawRequest');
 const { signToken } = require('../utils/token');
 const config = require('../config');
 const generateOrderId = require('../utils/generateOrderId');
 const { emitOrderUpdate } = require('../realtime/emitter');
 const auditLogger = require('../services/auditLogger');
 const { registerSubscription } = require('./subscriptionBridge');
+const { processFinancialSettlement } = require('../utils/financialSettlement');
 
 // JSON Scalar resolver (matching the schema)
 const { GraphQLScalarType, Kind } = require('graphql');
@@ -1968,31 +1970,61 @@ const resolvers = {
       if (userType) {
         if (userType === 'SELLER') {
           const restaurants = await Restaurant.find({ owner: userId }).select('_id').lean();
-          query.storeId = { $in: restaurants.map(r => r._id.toString()) };
+          const restaurantIds = restaurants.map(r => r._id);
+          query.storeId = { $in: restaurantIds };
+          query.userType = 'SELLER';
         } else if (userType === 'RIDER') {
           query.riderId = userId;
+          query.userType = 'RIDER';
         }
       } else if (userId) {
         // If userId provided without userType, search both
         const restaurants = await Restaurant.find({ owner: userId }).select('_id').lean();
+        const restaurantIds = restaurants.map(r => r._id);
         query.$or = [
-          { storeId: { $in: restaurants.map(r => r._id.toString()) } },
-          { riderId: userId }
+          { storeId: { $in: restaurantIds }, userType: 'SELLER' },
+          { riderId: userId, userType: 'RIDER' }
         ];
       }
 
       if (search) {
-        query.$or = [
-          ...(query.$or || []),
-          { requestId: { $regex: search, $options: 'i' } }
-        ];
+        const searchQuery = { requestId: { $regex: search, $options: 'i' } };
+        if (query.$or) {
+          query.$and = [
+            { $or: query.$or },
+            searchQuery
+          ];
+          delete query.$or;
+        } else {
+          query.$or = [searchQuery];
+        }
       }
 
-      // Placeholder - implement WithdrawRequest model if exists
-      // For now, return empty data with pagination
+      // Pagination
       const pageSize = pagination?.pageSize || 10;
       const pageNo = pagination?.pageNo || 1;
-      const total = 0; // Placeholder
+      const skip = (pageNo - 1) * pageSize;
+
+      // Get total count
+      const total = await WithdrawRequest.countDocuments(query);
+
+      // Fetch requests with pagination
+      const requests = await WithdrawRequest.find(query)
+        .populate('riderId', 'name email phone accountNumber currentWalletAmount totalWalletAmount withdrawnWalletAmount username bussinessDetails')
+        .populate('storeId', 'name slug image logo address username password stripeDetailsSubmitted commissionRate bussinessDetails unique_restaurant_id')
+        .populate('userId', 'name email phone')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .lean();
+
+      // Map fields to match admin app expectations
+      const mappedData = requests.map(req => ({
+        ...req,
+        rider: req.riderId,
+        store: req.storeId,
+        requestAmount: req.amount
+      }));
 
       return {
         success: true,
@@ -2003,7 +2035,7 @@ const resolvers = {
           pageNo,
           totalPages: Math.ceil(total / pageSize)
         },
-        data: []
+        data: mappedData
       };
     },
 
@@ -3288,10 +3320,41 @@ const resolvers = {
         order.pickedAt = new Date();
       } else if (status === 'delivered') {
         order.deliveredAt = new Date();
-        order.orderStatus = 'completed';
+        // order.orderStatus already set to 'delivered' on line 3284
       }
 
       await order.save();
+
+      // Process financial settlement when order is delivered
+      if (status === 'delivered') {
+        try {
+          // Fetch required data for settlement
+          const [restaurant, seller, rider] = await Promise.all([
+            Restaurant.findById(order.restaurant),
+            order.seller ? User.findById(order.seller) : null,
+            order.rider ? User.findById(order.rider) : null
+          ]);
+
+          // Only process settlement if all required data is available
+          if (restaurant && seller && rider) {
+            await processFinancialSettlement(order, restaurant, seller, rider);
+          } else {
+            console.warn('Financial settlement skipped: missing required data', {
+              orderId: order._id,
+              hasRestaurant: !!restaurant,
+              hasSeller: !!seller,
+              hasRider: !!rider
+            });
+          }
+        } catch (settlementError) {
+          // Log error but don't fail the order status update
+          console.error('Financial settlement error:', {
+            orderId: order._id,
+            error: settlementError.message,
+            stack: settlementError.stack
+          });
+        }
+      }
 
       emitOrderUpdate(order._id.toString(), {
         action: 'status_updated',
@@ -3545,23 +3608,28 @@ const resolvers = {
       }
 
       // Check for existing pending request
-      // Note: This is a placeholder - implement WithdrawRequest model if needed
-      // For now, we'll just update the rider's wallet
-      
-      // Update wallet amounts
-      rider.riderProfile.currentWalletAmount = currentWallet - requestAmount;
-      rider.riderProfile.withdrawnWalletAmount = (rider.riderProfile.withdrawnWalletAmount || 0) + requestAmount;
-      
-      await rider.save();
+      const existingRequest = await WithdrawRequest.findOne({
+        riderId: context.user._id,
+        status: 'REQUESTED'
+      });
 
-      // Return mock withdraw request (implement actual model if needed)
-      return {
-        _id: require('crypto').randomUUID(),
-        requestAmount,
-        status: 'pending',
-        createdAt: new Date(),
-        userId: rider._id.toString()
-      };
+      if (existingRequest) {
+        throw new Error('You already have a pending withdrawal request');
+      }
+
+      // Create withdrawal request without deducting wallet
+      // Wallet will be deducted when admin approves (status changes to TRANSFERRED)
+      const withdrawRequest = await WithdrawRequest.create({
+        userId: context.user._id,
+        userType: 'RIDER',
+        riderId: context.user._id,
+        amount: requestAmount,
+        status: 'REQUESTED'
+      });
+
+      return await WithdrawRequest.findById(withdrawRequest._id)
+        .populate('riderId', 'name email phone')
+        .lean();
     },
 
     // Seller/Restaurant mutations
@@ -3643,21 +3711,165 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      // Verify user owns the restaurant
-      const restaurant = await Restaurant.findOne({ owner: context.user._id }).lean();
+      // Verify user is seller and owns the restaurant
+      if (context.user.role !== 'seller') {
+        throw new Error('Only sellers can create withdraw requests');
+      }
+
+      const seller = await User.findById(context.user._id);
+      if (!seller || !seller.sellerProfile) {
+        throw new Error('Seller profile not found');
+      }
+
+      const restaurant = await Restaurant.findOne({ owner: context.user._id });
       if (!restaurant) {
         throw new Error('Restaurant not found');
       }
 
-      // Placeholder implementation - create actual WithdrawRequest model if needed
-      // For now, return a mock response
+      const currentWallet = seller.sellerProfile.currentWalletAmount || 0;
+      
+      if (requestAmount > currentWallet) {
+        throw new Error('Insufficient wallet balance');
+      }
+
+      if (requestAmount < 10) {
+        throw new Error('Minimum withdraw amount is ₹10');
+      }
+
+      // Check for existing pending request
+      const existingRequest = await WithdrawRequest.findOne({
+        userId: context.user._id,
+        storeId: restaurant._id,
+        status: 'REQUESTED'
+      });
+
+      if (existingRequest) {
+        throw new Error('You already have a pending withdrawal request');
+      }
+
+      // Create withdrawal request without deducting wallet
+      // Wallet will be deducted when admin approves (status changes to TRANSFERRED)
+      const withdrawRequest = await WithdrawRequest.create({
+        userId: context.user._id,
+        userType: 'SELLER',
+        storeId: restaurant._id,
+        amount: requestAmount,
+        status: 'REQUESTED'
+      });
+
+      return await WithdrawRequest.findById(withdrawRequest._id)
+        .populate('storeId', 'name slug')
+        .populate('userId', 'name email phone')
+        .lean();
+    },
+
+    async updateWithdrawReqStatus(_, { id, status }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'admin') {
+        throw new Error('Only admins can update withdrawal request status');
+      }
+
+      // Validate status
+      if (!['REQUESTED', 'TRANSFERRED', 'CANCELLED'].includes(status)) {
+        throw new Error('Invalid status. Must be REQUESTED, TRANSFERRED, or CANCELLED');
+      }
+
+      const withdrawRequest = await WithdrawRequest.findById(id);
+      if (!withdrawRequest) {
+        throw new Error('Withdrawal request not found');
+      }
+
+      const previousStatus = withdrawRequest.status;
+      
+      // Prevent invalid transitions
+      if (previousStatus === 'CANCELLED') {
+        throw new Error('Cannot change status of a cancelled withdrawal request');
+      }
+
+      if (previousStatus === 'TRANSFERRED' && status !== 'CANCELLED') {
+        throw new Error('Cannot change status from TRANSFERRED to anything other than CANCELLED');
+      }
+
+      // Update status
+      withdrawRequest.status = status;
+      withdrawRequest.processedAt = new Date();
+      withdrawRequest.processedBy = context.user._id;
+
+      // Handle wallet updates based on status transition
+      const user = await User.findById(withdrawRequest.userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (status === 'TRANSFERRED') {
+        // Deduct from wallet when transferring
+        if (previousStatus === 'REQUESTED') {
+          if (withdrawRequest.userType === 'RIDER') {
+            if (!user.riderProfile) {
+              throw new Error('Rider profile not found');
+            }
+            const currentWallet = user.riderProfile.currentWalletAmount || 0;
+            if (currentWallet < withdrawRequest.amount) {
+              throw new Error('Insufficient wallet balance');
+            }
+            user.riderProfile.currentWalletAmount = currentWallet - withdrawRequest.amount;
+            user.riderProfile.withdrawnWalletAmount = (user.riderProfile.withdrawnWalletAmount || 0) + withdrawRequest.amount;
+          } else if (withdrawRequest.userType === 'SELLER') {
+            if (!user.sellerProfile) {
+              throw new Error('Seller profile not found');
+            }
+            const currentWallet = user.sellerProfile.currentWalletAmount || 0;
+            if (currentWallet < withdrawRequest.amount) {
+              throw new Error('Insufficient wallet balance');
+            }
+            user.sellerProfile.currentWalletAmount = currentWallet - withdrawRequest.amount;
+            user.sellerProfile.withdrawnWalletAmount = (user.sellerProfile.withdrawnWalletAmount || 0) + withdrawRequest.amount;
+          }
+          await user.save();
+        }
+      } else if (status === 'CANCELLED') {
+        // Refund wallet if previously TRANSFERRED
+        if (previousStatus === 'TRANSFERRED') {
+          if (withdrawRequest.userType === 'RIDER') {
+            if (!user.riderProfile) {
+              throw new Error('Rider profile not found');
+            }
+            user.riderProfile.currentWalletAmount = (user.riderProfile.currentWalletAmount || 0) + withdrawRequest.amount;
+            user.riderProfile.withdrawnWalletAmount = (user.riderProfile.withdrawnWalletAmount || 0) - withdrawRequest.amount;
+          } else if (withdrawRequest.userType === 'SELLER') {
+            if (!user.sellerProfile) {
+              throw new Error('Seller profile not found');
+            }
+            user.sellerProfile.currentWalletAmount = (user.sellerProfile.currentWalletAmount || 0) + withdrawRequest.amount;
+            user.sellerProfile.withdrawnWalletAmount = (user.sellerProfile.withdrawnWalletAmount || 0) - withdrawRequest.amount;
+          }
+          await user.save();
+        }
+        // If cancelling from REQUESTED, no wallet change needed (wasn't deducted)
+      }
+
+      await withdrawRequest.save();
+
+      // Return populated request for admin app
+      const populatedRequest = await WithdrawRequest.findById(withdrawRequest._id)
+        .populate('riderId', 'name email phone accountNumber currentWalletAmount totalWalletAmount withdrawnWalletAmount username bussinessDetails')
+        .populate('storeId', 'name slug image logo address username password stripeDetailsSubmitted commissionRate bussinessDetails unique_restaurant_id')
+        .populate('userId', 'name email phone')
+        .lean();
+
+      // Map fields to match admin app expectations
       return {
-        _id: require('crypto').randomUUID(),
-        requestAmount,
-        status: 'pending',
-        createdAt: new Date(),
-        userId: context.user._id.toString(),
-        storeId: restaurant._id.toString()
+        success: true,
+        message: 'Withdrawal request status updated successfully',
+        data: {
+          ...populatedRequest,
+          rider: populatedRequest.riderId,
+          store: populatedRequest.storeId,
+          requestAmount: populatedRequest.amount
+        }
       };
     },
 
