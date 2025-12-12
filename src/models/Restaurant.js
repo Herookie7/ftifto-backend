@@ -141,7 +141,10 @@ const restaurantSchema = new mongoose.Schema(
       bankName: { type: String, trim: true },
       accountNumber: { type: String, trim: true },
       accountName: { type: String, trim: true },
-      accountCode: { type: String, trim: true }
+      accountCode: { type: String, trim: true },
+      bussinessRegNo: { type: Number },
+      companyRegNo: { type: Number },
+      taxRate: { type: Number }
     }
   },
   { timestamps: true }
