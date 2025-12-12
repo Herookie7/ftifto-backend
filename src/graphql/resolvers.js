@@ -577,7 +577,13 @@ const resolvers = {
 
     async reviewsByRestaurant(_, { restaurant }) {
       const reviews = await Review.find({ restaurant, isActive: true })
-        .populate('order')
+        .populate({
+          path: 'order',
+          populate: {
+            path: 'customer',
+            select: '_id name email'
+          }
+        })
         .populate('user')
         .lean()
         .sort({ createdAt: -1 });
