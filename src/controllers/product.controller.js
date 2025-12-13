@@ -2,6 +2,7 @@ const asyncHandler = require('express-async-handler');
 const { validationResult } = require('express-validator');
 const Product = require('../models/Product');
 const Restaurant = require('../models/Restaurant');
+const Category = require('../models/Category');
 
 const getProducts = asyncHandler(async (req, res) => {
   const { restaurant, search, isActive, page = 1, limit = 25 } = req.query;
@@ -76,6 +77,21 @@ const createProduct = asyncHandler(async (req, res) => {
 
   const product = await Product.create(productData);
 
+  // Add product to categories if provided
+  if (productData.categories && Array.isArray(productData.categories) && productData.categories.length > 0) {
+    for (const categoryId of productData.categories) {
+      if (!categoryId) continue; // Skip empty category IDs
+      const category = await Category.findById(categoryId);
+      if (category && category.restaurant.toString() === restaurantId.toString()) {
+        // Only add if not already in the array
+        if (!category.foods.includes(product._id)) {
+          category.foods.push(product._id);
+          await category.save();
+        }
+      }
+    }
+  }
+
   res.status(201).json(product);
 });
 
@@ -92,9 +108,36 @@ const updateProduct = asyncHandler(async (req, res) => {
     throw new Error('Product not found');
   }
 
+  const oldCategories = product.categories || [];
   Object.assign(product, req.body);
-
   await product.save();
+
+  // Update category relationships if categories changed
+  if (req.body.categories !== undefined) {
+    const newCategories = Array.isArray(req.body.categories) ? req.body.categories : [];
+    
+    // Remove product from old categories
+    const categoriesToRemove = oldCategories.filter(catId => !newCategories.includes(catId.toString()));
+    for (const categoryId of categoriesToRemove) {
+      await Category.updateOne(
+        { _id: categoryId },
+        { $pull: { foods: product._id } }
+      );
+    }
+
+    // Add product to new categories
+    for (const categoryId of newCategories) {
+      if (!categoryId) continue; // Skip empty category IDs
+      const category = await Category.findById(categoryId);
+      if (category && category.restaurant.toString() === product.restaurant.toString()) {
+        // Only add if not already in the array
+        if (!category.foods.includes(product._id)) {
+          category.foods.push(product._id);
+          await category.save();
+        }
+      }
+    }
+  }
 
   res.json(product);
 });
