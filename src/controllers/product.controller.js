@@ -150,7 +150,16 @@ const deleteProduct = asyncHandler(async (req, res) => {
     throw new Error('Product not found');
   }
 
-  await product.remove();
+  // Remove product from all categories' foods arrays
+  if (product.categories && Array.isArray(product.categories) && product.categories.length > 0) {
+    await Category.updateMany(
+      { _id: { $in: product.categories } },
+      { $pull: { foods: product._id } }
+    );
+  }
+
+  // Delete the product using deleteOne (replaces deprecated remove())
+  await product.deleteOne();
 
   res.json({ message: 'Product deleted successfully' });
 });
