@@ -4154,13 +4154,20 @@ const resolvers = {
         throw new Error('Category not found');
       }
 
-      const restaurant = await Restaurant.findOne({ 
-        _id: category.restaurant._id || category.restaurant,
-        owner: context.user._id 
-      });
-
+      // Check if user is admin or restaurant owner
+      const isAdmin = context.user.role === 'admin';
+      const restaurantId = category.restaurant._id || category.restaurant;
+      const restaurant = await Restaurant.findById(restaurantId);
+      
       if (!restaurant) {
-        throw new Error('Access denied');
+        throw new Error('Restaurant not found');
+      }
+
+      // If not admin, check if user is the owner
+      if (!isAdmin) {
+        if (restaurant.owner.toString() !== context.user._id.toString()) {
+          throw new Error('Access denied');
+        }
       }
 
       if (title !== undefined) category.title = title;
@@ -4183,13 +4190,20 @@ const resolvers = {
         throw new Error('Category not found');
       }
 
-      const restaurant = await Restaurant.findOne({ 
-        _id: category.restaurant._id || category.restaurant,
-        owner: context.user._id 
-      });
-
+      // Check if user is admin or restaurant owner
+      const isAdmin = context.user.role === 'admin';
+      const restaurantId = category.restaurant._id || category.restaurant;
+      const restaurant = await Restaurant.findById(restaurantId);
+      
       if (!restaurant) {
-        throw new Error('Access denied');
+        throw new Error('Restaurant not found');
+      }
+
+      // If not admin, check if user is the owner
+      if (!isAdmin) {
+        if (restaurant.owner.toString() !== context.user._id.toString()) {
+          throw new Error('Access denied');
+        }
       }
 
       // Delete all products in this category
@@ -4210,13 +4224,19 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      const restaurant = await Restaurant.findOne({ 
-        _id: restaurantId,
-        owner: context.user._id 
-      });
-
+      // Check if user is admin or restaurant owner
+      const isAdmin = context.user.role === 'admin';
+      
+      const restaurant = await Restaurant.findById(restaurantId);
       if (!restaurant) {
-        throw new Error('Restaurant not found or access denied');
+        throw new Error('Restaurant not found');
+      }
+
+      // If not admin, check if user is the owner
+      if (!isAdmin) {
+        if (restaurant.owner.toString() !== context.user._id.toString()) {
+          throw new Error('Restaurant not found or access denied');
+        }
       }
 
       const product = await Product.create({
@@ -4257,13 +4277,20 @@ const resolvers = {
         throw new Error('Product not found');
       }
 
-      const restaurant = await Restaurant.findOne({ 
-        _id: product.restaurant._id || product.restaurant,
-        owner: context.user._id 
-      });
-
+      // Check if user is admin or restaurant owner
+      const isAdmin = context.user.role === 'admin';
+      const restaurantId = product.restaurant._id || product.restaurant;
+      const restaurant = await Restaurant.findById(restaurantId);
+      
       if (!restaurant) {
-        throw new Error('Access denied');
+        throw new Error('Restaurant not found');
+      }
+
+      // If not admin, check if user is the owner
+      if (!isAdmin) {
+        if (restaurant.owner.toString() !== context.user._id.toString()) {
+          throw new Error('Access denied');
+        }
       }
 
       if (productInput.title !== undefined) product.title = productInput.title;
@@ -4315,13 +4342,20 @@ const resolvers = {
         throw new Error('Product not found');
       }
 
-      const restaurant = await Restaurant.findOne({ 
-        _id: product.restaurant._id || product.restaurant,
-        owner: context.user._id 
-      });
-
+      // Check if user is admin or restaurant owner
+      const isAdmin = context.user.role === 'admin';
+      const restaurantId = product.restaurant._id || product.restaurant;
+      const restaurant = await Restaurant.findById(restaurantId);
+      
       if (!restaurant) {
-        throw new Error('Access denied');
+        throw new Error('Restaurant not found');
+      }
+
+      // If not admin, check if user is the owner
+      if (!isAdmin) {
+        if (restaurant.owner.toString() !== context.user._id.toString()) {
+          throw new Error('Access denied');
+        }
       }
 
       // Remove product from all categories
