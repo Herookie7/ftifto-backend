@@ -4247,7 +4247,7 @@ const resolvers = {
       return product;
     },
 
-    async updateProduct(_, { id, productInput }, context) {
+    async updateProduct(_, { id, productInput, categoryId }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -4280,6 +4280,28 @@ const resolvers = {
       if (productInput.addons !== undefined) product.addons = productInput.addons;
 
       await product.save();
+
+      // Update category relationship if categoryId is provided
+      if (categoryId !== undefined) {
+        // Remove product from all categories first
+        await Category.updateMany(
+          { foods: id },
+          { $pull: { foods: id } }
+        );
+
+        // Add product to the new category if categoryId is provided
+        if (categoryId) {
+          const category = await Category.findById(categoryId);
+          if (category && category.restaurant.toString() === (product.restaurant._id || product.restaurant).toString()) {
+            // Only add if not already in the array
+            if (!category.foods.includes(id)) {
+              category.foods.push(id);
+              await category.save();
+            }
+          }
+        }
+      }
+
       return product;
     },
 

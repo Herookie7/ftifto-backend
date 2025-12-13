@@ -705,10 +705,10 @@ const typeDefs = gql`
   }
 
   type DashboardUsersResponse {
-    usersCount: Int
-    vendorsCount: Int
-    restaurantsCount: Int
-    ridersCount: Int
+    usersCount: [Int]
+    vendorsCount: [Int]
+    restaurantsCount: [Int]
+    ridersCount: [Int]
     # Legacy fields for backward compatibility
     total: Int
     active: Int
@@ -1105,7 +1105,7 @@ const typeDefs = gql`
     updateCategory(id: ID!, title: String, description: String, image: String, order: Int, isActive: Boolean): Category
     deleteCategory(id: ID!): Boolean
     createProduct(restaurantId: ID!, categoryId: ID, productInput: ProductInput!): Product
-    updateProduct(id: ID!, productInput: ProductInput!): Product
+    updateProduct(id: ID!, productInput: ProductInput!, categoryId: ID): Product
     deleteProduct(id: ID!): Boolean
     
     # Rider management mutations (Admin app)
