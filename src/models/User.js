@@ -57,6 +57,18 @@ const sellerProfileSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const customerProfileSchema = new mongoose.Schema(
+  {
+    currentWalletAmount: { type: Number, default: 0 },
+    totalWalletAmount: { type: Number, default: 0 },
+    rewardCoins: { type: Number, default: 0 },
+    referralCode: { type: String, unique: true, sparse: true },
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    isFirstOrder: { type: Boolean, default: true }
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -107,6 +119,7 @@ const userSchema = new mongoose.Schema(
     },
     addressBook: [addressSchema],
     sellerProfile: sellerProfileSchema,
+    customerProfile: customerProfileSchema,
     riderProfile: {
       vehicleType: { type: String, trim: true },
       licenseNumber: { type: String, trim: true },
@@ -133,7 +146,19 @@ const userSchema = new mongoose.Schema(
       language: { type: String, default: 'en' },
       marketingOptIn: { type: Boolean, default: false }
     },
-    pushTokens: [{ type: String }]
+    pushTokens: [{ type: String }],
+    // Notification preferences
+    notificationPreferences: {
+      subscriptionExpiry: { type: Boolean, default: true },
+      walletLowBalance: { type: Boolean, default: true },
+      remainingTiffins: { type: Boolean, default: true },
+      birthdayWishes: { type: Boolean, default: true },
+      anniversaryWishes: { type: Boolean, default: true },
+      offers: { type: Boolean, default: true }
+    },
+    // Personal information for notifications
+    birthday: { type: Date },
+    anniversary: { type: Date }
   },
   { timestamps: true }
 );

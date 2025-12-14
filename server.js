@@ -75,6 +75,13 @@ const startServer = async () => {
     logger.warn('Failed to start metrics push', { error: error.message });
   }
 
+  try {
+    const { initializeNotificationSchedulers } = require('./src/services/notificationScheduler');
+    initializeNotificationSchedulers();
+  } catch (error) {
+    logger.warn('Failed to initialize notification schedulers', { error: error.message });
+  }
+
   let isShuttingDown = false;
 
   const shutdown = async (signal) => {
@@ -101,6 +108,13 @@ const startServer = async () => {
       await maintenanceService.shutdown();
     } catch (error) {
       logger.warn('Error shutting down maintenance service', { error: error.message });
+    }
+
+    try {
+      const { shutdownNotificationSchedulers } = require('./src/services/notificationScheduler');
+      shutdownNotificationSchedulers();
+    } catch (error) {
+      logger.warn('Error shutting down notification schedulers', { error: error.message });
     }
 
     server.close(() => {

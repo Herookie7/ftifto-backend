@@ -145,6 +145,19 @@ const restaurantSchema = new mongoose.Schema(
       bussinessRegNo: { type: Number },
       companyRegNo: { type: Number },
       taxRate: { type: Number }
+    },
+    isPinned: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    pinExpiry: {
+      type: Date,
+      index: true
+    },
+    pinPaymentId: {
+      type: String,
+      trim: true
     }
   },
   { timestamps: true }
@@ -159,6 +172,12 @@ restaurantSchema.pre('save', function generateSlug(next) {
 
 restaurantSchema.index({ location: '2dsphere' });
 restaurantSchema.index({ 'deliveryBounds.coordinates': '2dsphere' });
+// Text indexes for search functionality
+restaurantSchema.index({ name: 'text', keywords: 'text' });
+// Compound indexes for common queries
+restaurantSchema.index({ isActive: 1, isAvailable: 1 });
+restaurantSchema.index({ shopType: 1, isActive: 1, isAvailable: 1 });
+restaurantSchema.index({ isPinned: 1, pinExpiry: 1 });
 
 module.exports = mongoose.model('Restaurant', restaurantSchema);
 

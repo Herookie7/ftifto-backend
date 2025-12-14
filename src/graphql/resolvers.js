@@ -12,7 +12,35 @@ const Zone = require('../models/Zone');
 const Banner = require('../models/Banner');
 const Coupon = require('../models/Coupon');
 const WithdrawRequest = require('../models/WithdrawRequest');
+const WalletTransaction = require('../models/WalletTransaction');
+const Subscription = require('../models/Subscription');
+const ReferralTransaction = require('../models/ReferralTransaction');
+const MenuSchedule = require('../models/MenuSchedule');
+const HolidayRequest = require('../models/HolidayRequest');
+const Franchise = require('../models/Franchise');
 const { signToken } = require('../utils/token');
+const logger = require('../logger');
+
+// Helper function to generate unique referral code
+const generateReferralCode = async () => {
+  const crypto = require('crypto');
+  let code;
+  let exists = true;
+  
+  while (exists) {
+    // Generate 8 character alphanumeric code
+    code = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const user = await User.findOne({ 
+      $or: [
+        { 'customerProfile.referralCode': code },
+        { referralCode: code }
+      ]
+    });
+    exists = !!user;
+  }
+  
+  return code;
+};
 const config = require('../config');
 const generateOrderId = require('../utils/generateOrderId');
 const { emitOrderUpdate } = require('../realtime/emitter');
@@ -84,10 +112,31 @@ const resolvers = {
   Query: {
     // Nearby restaurants with full details
     async nearByRestaurants(_, { latitude, longitude, shopType }) {
+      const cache = require('../services/cache.service');
+      const cacheKey = `restaurants:${latitude || 'null'}:${longitude || 'null'}:${shopType || 'all'}`;
+      
+      // Try to get from cache first
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
       const query = { isActive: true, isAvailable: true };
       if (shopType) {
         query.shopType = shopType;
       }
+
+      // Check for active pins (not expired)
+      const now = new Date();
+      const pinnedQuery = {
+        ...query,
+        isPinned: true,
+        $or: [
+          { pinExpiry: { $exists: false } },
+          { pinExpiry: null },
+          { pinExpiry: { $gt: now } }
+        ]
+      };
 
       let restaurants = await Restaurant.find(query)
         .populate('owner')
@@ -98,6 +147,19 @@ const resolvers = {
             model: 'Product'
           }
         })
+        .lean();
+
+      // Sort: pinned restaurants first, then by rating
+      restaurants.sort((a, b) => {
+        const aIsPinned = a.isPinned && (!a.pinExpiry || new Date(a.pinExpiry) > now);
+        const bIsPinned = b.isPinned && (!b.pinExpiry || new Date(b.pinExpiry) > now);
+        
+        if (aIsPinned && !bIsPinned) return -1;
+        if (!aIsPinned && bIsPinned) return 1;
+        
+        // If both pinned or both not pinned, sort by rating
+        return (b.rating || 0) - (a.rating || 0);
+      });
         .populate('zone')
         .lean();
 
@@ -146,6 +208,11 @@ const resolvers = {
         })),
         restaurants
       };
+
+      // Cache the result for 5 minutes
+      await cache.set(cacheKey, result, 300);
+      
+      return result;
     },
 
     // Nearby restaurants preview (lightweight)
@@ -178,6 +245,19 @@ const resolvers = {
         restaurant.reviewCount = reviews.length;
         restaurant.reviewAverage = reviews.length > 0 ? ratings / reviews.length : 0;
       }
+
+      // Sort: pinned restaurants first, then by rating
+      const now = new Date();
+      restaurants.sort((a, b) => {
+        const aIsPinned = a.isPinned && (!a.pinExpiry || new Date(a.pinExpiry) > now);
+        const bIsPinned = b.isPinned && (!b.pinExpiry || new Date(b.pinExpiry) > now);
+        
+        if (aIsPinned && !bIsPinned) return -1;
+        if (!aIsPinned && bIsPinned) return 1;
+        
+        // If both pinned or both not pinned, sort by rating
+        return (b.reviewAverage || 0) - (a.reviewAverage || 0);
+      });
 
       const offers = await Offer.find({ isActive: true }).lean();
       const sections = await Section.find({ isActive: true }).lean();
@@ -702,8 +782,21 @@ const resolvers = {
     // Zones query
     async zones() {
       try {
+        const cache = require('../services/cache.service');
+        const cacheKey = 'zones:all';
+        
+        // Try to get from cache first
+        const cached = await cache.get(cacheKey);
+        if (cached) {
+          return cached;
+        }
+
         const zones = await Zone.find({ isActive: true }).lean();
         console.log(`Zones resolver: Found ${zones.length} active zones`);
+        
+        // Cache for 10 minutes
+        await cache.set(cacheKey, zones, 600);
+        
         return zones;
       } catch (error) {
         console.error('Zones resolver error:', error);
@@ -713,9 +806,23 @@ const resolvers = {
 
     // Banners query
     async banners() {
-      return await Banner.find({ isActive: true })
+      const cache = require('../services/cache.service');
+      const cacheKey = 'banners:active';
+      
+      // Try to get from cache first
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+      
+      const banners = await Banner.find({ isActive: true })
         .sort({ order: 1, createdAt: -1 })
         .lean();
+      
+      // Cache for 10 minutes
+      await cache.set(cacheKey, banners, 600);
+      
+      return banners;
     },
 
     // Get app versions
@@ -1611,11 +1718,23 @@ const resolvers = {
       const totalCODOrders = orders.filter(order => order.paymentMethod === 'cod' || order.paymentMethod === 'COD').length;
       const totalCardOrders = orders.filter(order => order.paymentMethod === 'card' || order.paymentMethod === 'CARD').length;
 
+      // Order status breakdown
+      const orderStatusBreakdown = {
+        received: orders.filter(o => o.orderStatus === 'accepted').length,
+        prepared: orders.filter(o => o.orderStatus === 'preparing' || o.orderStatus === 'ready').length,
+        pending: orders.filter(o => o.orderStatus === 'pending').length,
+        onWay: orders.filter(o => o.orderStatus === 'enroute' || o.orderStatus === 'picked').length,
+        return: orders.filter(o => o.orderStatus === 'returned' || o.orderStatus === 'refunded').length,
+        delivered: orders.filter(o => o.orderStatus === 'delivered').length,
+        cancelled: orders.filter(o => o.orderStatus === 'cancelled').length
+      };
+
       return {
         totalOrders,
         totalSales,
         totalCODOrders,
-        totalCardOrders
+        totalCardOrders,
+        orderStatusBreakdown
       };
     },
 
@@ -1635,6 +1754,53 @@ const resolvers = {
       return {
         salesAmount,
         ordersCount
+      };
+    },
+
+    async getSellerDashboardQuickStats(_, { restaurantId }, context) {
+      if (!context.user || context.user.role !== 'seller') {
+        throw new Error('Unauthorized: Seller access required');
+      }
+
+      // Verify restaurant belongs to seller
+      const restaurant = await Restaurant.findById(restaurantId);
+      if (!restaurant || restaurant.owner.toString() !== context.user._id.toString()) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      const now = new Date();
+      const todayStart = new Date(now.setHours(0, 0, 0, 0));
+      const todayEnd = new Date(now.setHours(23, 59, 59, 999));
+
+      // Today's orders
+      const todayOrders = await Order.find({
+        restaurant: restaurantId,
+        isActive: true,
+        createdAt: { $gte: todayStart, $lte: todayEnd }
+      }).lean();
+
+      const todayOrdersCount = todayOrders.length;
+      const todayRevenue = todayOrders.reduce((sum, order) => sum + (order.orderAmount || 0), 0);
+
+      // Pending orders
+      const pendingOrders = await Order.find({
+        restaurant: restaurantId,
+        isActive: true,
+        orderStatus: 'PENDING'
+      }).countDocuments();
+
+      // Active orders (accepted, preparing, picked, assigned, enroute)
+      const activeOrders = await Order.find({
+        restaurant: restaurantId,
+        isActive: true,
+        orderStatus: { $in: ['ACCEPTED', 'PREPARING', 'PICKED', 'ASSIGNED', 'ENROUTE'] }
+      }).countDocuments();
+
+      return {
+        todayOrders: todayOrdersCount,
+        todayRevenue: todayRevenue,
+        pendingOrders: pendingOrders,
+        activeOrders: activeOrders
       };
     },
 
@@ -2122,6 +2288,215 @@ const resolvers = {
           deliveryFee: 0
         }
       };
+    },
+
+    // Wallet queries
+    async getWalletBalance(_, __, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Initialize customerProfile if not exists
+      if (!user.customerProfile) {
+        user.customerProfile = {
+          currentWalletAmount: 0,
+          totalWalletAmount: 0,
+          rewardCoins: 0,
+          isFirstOrder: true
+        };
+        await user.save();
+      }
+
+      return {
+        currentBalance: user.customerProfile.currentWalletAmount || 0,
+        totalAdded: user.customerProfile.totalWalletAmount || 0,
+        minimumBalance: 100 // Rs. 100 minimum balance
+      };
+    },
+
+    async getWalletTransactions(_, { pagination }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const page = pagination?.page || pagination?.pageNo || 1;
+      const limit = pagination?.limit || pagination?.pageSize || 10;
+      const skip = (page - 1) * limit;
+
+      const query = {
+        userId: context.user._id,
+        userType: 'CUSTOMER'
+      };
+
+      const [transactions, total] = await Promise.all([
+        WalletTransaction.find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        WalletTransaction.countDocuments(query)
+      ]);
+
+      return {
+        data: transactions,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+    },
+
+    // Subscription queries
+    async getUserSubscription(_, __, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findOne({
+        userId: context.user._id,
+        status: 'ACTIVE'
+      })
+        .populate('restaurantId')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (!subscription) {
+        return null;
+      }
+
+      // Calculate remaining days
+      const now = new Date();
+      const endDate = new Date(subscription.endDate);
+      const remainingDays = Math.max(0, Math.ceil((endDate - now) / (1000 * 60 * 60 * 24)));
+
+      // Populate restaurant
+      const populatedRestaurant = await Restaurant.findById(subscription.restaurantId).lean();
+
+      return {
+        ...subscription,
+        restaurant: populatedRestaurant,
+        remainingDays: remainingDays
+      };
+    },
+
+    async getSubscriptionPlans(_, __, context) {
+      // Define subscription plans
+      const plans = [
+        {
+          _id: '7_DAYS',
+          planType: '7_DAYS',
+          planName: '7 Days Plan',
+          duration: 7,
+          totalTiffins: 14, // 2 tiffins per day
+          price: 0, // Price to be set by admin
+          description: '7 days subscription with 14 tiffins',
+          isActive: true
+        },
+        {
+          _id: '15_DAYS',
+          planType: '15_DAYS',
+          planName: '15 Days Plan',
+          duration: 15,
+          totalTiffins: 30, // 2 tiffins per day
+          price: 0,
+          description: '15 days subscription with 30 tiffins',
+          isActive: true
+        },
+        {
+          _id: '1_MONTH',
+          planType: '1_MONTH',
+          planName: '1 Month Plan',
+          duration: 30,
+          totalTiffins: 60, // 2 tiffins per day
+          price: 0,
+          description: '1 month subscription with 60 tiffins',
+          isActive: true
+        },
+        {
+          _id: '2_MONTHS',
+          planType: '2_MONTHS',
+          planName: '2 Months Plan',
+          duration: 60,
+          totalTiffins: 120,
+          price: 0,
+          description: '2 months subscription with 120 tiffins',
+          isActive: true
+        },
+        {
+          _id: '3_MONTHS',
+          planType: '3_MONTHS',
+          planName: '3 Months Plan',
+          duration: 90,
+          totalTiffins: 180,
+          price: 0,
+          description: '3 months subscription with 180 tiffins',
+          isActive: true
+        }
+      ];
+
+      return plans;
+    },
+
+    // Menu schedule queries
+    async getMenuSchedules(_, { restaurantId, scheduleType }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findOne({
+        _id: restaurantId,
+        owner: context.user._id
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      const query = { restaurantId: restaurant._id, isActive: true };
+      if (scheduleType) {
+        query.scheduleType = scheduleType;
+      }
+
+      const schedules = await MenuSchedule.find(query)
+        .populate('menuItems.productId')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return schedules;
+    },
+
+    async getMenuSchedule(_, { scheduleId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const schedule = await MenuSchedule.findById(scheduleId)
+        .populate('menuItems.productId')
+        .lean();
+
+      if (!schedule) {
+        throw new Error('Menu schedule not found');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findOne({
+        _id: schedule.restaurantId,
+        owner: context.user._id
+      });
+
+      if (!restaurant) {
+        throw new Error('Access denied');
+      }
+
+      return schedule;
     }
   },
 
@@ -2135,7 +2510,62 @@ const resolvers = {
     }
   },
 
+  Subscription: {
+    async restaurant(parent) {
+      if (parent.restaurant) {
+        return parent.restaurant;
+      }
+      if (parent.restaurantId) {
+        return await Restaurant.findById(parent.restaurantId).lean();
+      }
+      return null;
+    }
+  },
+
   User: {
+    customerProfile(parent) {
+      if (parent.customerProfile) {
+        return {
+          currentWalletAmount: parent.customerProfile.currentWalletAmount || 0,
+          totalWalletAmount: parent.customerProfile.totalWalletAmount || 0,
+          rewardCoins: parent.customerProfile.rewardCoins || 0,
+          referralCode: parent.customerProfile.referralCode || parent.referralCode || null,
+          referredBy: parent.customerProfile.referredBy || parent.referredBy || null,
+          isFirstOrder: parent.customerProfile.isFirstOrder !== undefined 
+            ? parent.customerProfile.isFirstOrder 
+            : (parent.isFirstOrder !== undefined ? parent.isFirstOrder : true)
+        };
+      }
+      // Return default if not set
+      return {
+        currentWalletAmount: 0,
+        totalWalletAmount: 0,
+        rewardCoins: 0,
+        referralCode: parent.referralCode || null,
+        referredBy: parent.referredBy || null,
+        isFirstOrder: parent.isFirstOrder !== undefined ? parent.isFirstOrder : true
+      };
+    },
+    rewardCoins(parent) {
+      return parent.customerProfile?.rewardCoins || parent.rewardCoins || 0;
+    },
+    referralCode(parent) {
+      return parent.customerProfile?.referralCode || parent.referralCode || null;
+    },
+    isFirstOrder(parent) {
+      return parent.customerProfile?.isFirstOrder !== undefined 
+        ? parent.customerProfile.isFirstOrder 
+        : (parent.isFirstOrder !== undefined ? parent.isFirstOrder : true);
+    },
+    async referredBy(parent) {
+      if (parent.customerProfile?.referredBy || parent.referredBy) {
+        const referrerId = parent.customerProfile?.referredBy || parent.referredBy;
+        if (referrerId) {
+          return await User.findById(referrerId).lean();
+        }
+      }
+      return null;
+    },
     addresses: (parent) => {
       // Map addressBook to addresses
       if (parent.addressBook) {
@@ -2672,7 +3102,7 @@ const resolvers = {
     },
 
     async createUser(_, { userInput }) {
-      const { phone, email, password, name, notificationToken, appleId, emailIsVerified, isPhoneExists } = userInput;
+      const { phone, email, password, name, notificationToken, appleId, emailIsVerified, isPhoneExists, referralCode } = userInput;
 
       // Check if user exists
       const existingUser = await User.findOne({
@@ -2681,6 +3111,33 @@ const resolvers = {
 
       if (existingUser) {
         throw new Error('User with provided email or phone already exists');
+      }
+
+      // Generate unique referral code for new user
+      const newReferralCode = await generateReferralCode();
+
+      // Initialize customerProfile with referral code
+      const customerProfile = {
+        currentWalletAmount: 0,
+        totalWalletAmount: 0,
+        rewardCoins: 0,
+        referralCode: newReferralCode,
+        isFirstOrder: true
+      };
+
+      // Handle referral if referralCode is provided
+      let referrer = null;
+      if (referralCode) {
+        referrer = await User.findOne({
+          $or: [
+            { 'customerProfile.referralCode': referralCode },
+            { referralCode: referralCode }
+          ]
+        });
+
+        if (referrer) {
+          customerProfile.referredBy = referrer._id;
+        }
       }
 
       const user = await User.create({
@@ -2692,8 +3149,63 @@ const resolvers = {
         phoneIsVerified: isPhoneExists || false,
         emailIsVerified: emailIsVerified || false,
         notificationToken,
+        customerProfile: customerProfile,
         metadata: appleId ? { appleId } : undefined
       });
+
+      // Process referral cashback if user was referred
+      if (referrer) {
+        try {
+          // Initialize referrer's customerProfile if not exists
+          if (!referrer.customerProfile) {
+            referrer.customerProfile = {
+              currentWalletAmount: 0,
+              totalWalletAmount: 0,
+              rewardCoins: 0,
+              isFirstOrder: referrer.isFirstOrder !== undefined ? referrer.isFirstOrder : true
+            };
+            if (!referrer.customerProfile.referralCode) {
+              referrer.customerProfile.referralCode = await generateReferralCode();
+            }
+          }
+
+          const cashbackAmount = 50; // Rs. 50 cashback
+          const previousBalance = referrer.customerProfile.currentWalletAmount || 0;
+          const newBalance = previousBalance + cashbackAmount;
+
+          // Credit cashback to referrer's wallet
+          referrer.customerProfile.currentWalletAmount = newBalance;
+          referrer.customerProfile.totalWalletAmount = (referrer.customerProfile.totalWalletAmount || 0) + cashbackAmount;
+
+          // Create wallet transaction for referrer
+          await WalletTransaction.create({
+            userId: referrer._id,
+            userType: 'CUSTOMER',
+            type: 'CREDIT',
+            amount: cashbackAmount,
+            balanceAfter: newBalance,
+            description: `Referral cashback - ${user.name} registered`,
+            transactionType: 'REFERRAL_BONUS',
+            status: 'COMPLETED',
+            referenceId: `REF_${user._id}`
+          });
+
+          // Create referral transaction record
+          await ReferralTransaction.create({
+            referrerId: referrer._id,
+            referredUserId: user._id,
+            referralCode: referralCode,
+            cashbackAmount: cashbackAmount,
+            status: 'CREDITED',
+            creditedAt: new Date()
+          });
+
+          await referrer.save();
+        } catch (referralError) {
+          // Log error but don't fail user registration
+          console.error('Referral cashback error:', referralError);
+        }
+      }
 
       const token = signToken({ id: user._id, role: user.role });
       const tokenExpiration = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -2702,7 +3214,7 @@ const resolvers = {
         category: 'auth',
         action: 'register',
         userId: user._id.toString(),
-        metadata: { role: user.role }
+        metadata: { role: user.role, referredBy: referrer?._id?.toString() }
       });
 
       return {
@@ -2999,6 +3511,26 @@ const resolvers = {
         throw new Error('Customer not found');
       }
 
+      // Initialize customerProfile if not exists
+      if (!customer.customerProfile) {
+        customer.customerProfile = {
+          currentWalletAmount: 0,
+          totalWalletAmount: 0,
+          rewardCoins: 0,
+          isFirstOrder: true
+        };
+      }
+
+      // Check for active subscription
+      const activeSubscription = await Subscription.findOne({
+        userId: customer._id,
+        restaurantId: restaurant,
+        status: 'ACTIVE'
+      }).lean();
+
+      // Check if first order (for free delivery)
+      const isFirstOrder = customer.customerProfile.isFirstOrder !== false;
+
       // Calculate order amount from items
       let orderAmount = 0;
       const items = orderInput.map(item => {
@@ -3028,7 +3560,54 @@ const resolvers = {
         };
       });
 
-      orderAmount += (deliveryCharges || 0) + (tipping || 0) + (taxationAmount || 0);
+      // Apply free delivery logic
+      let finalDeliveryCharges = deliveryCharges || 0;
+      const shouldApplyFreeDelivery = 
+        (isFirstOrder) || // First order free delivery
+        (activeSubscription && activeSubscription.freeDelivery); // Subscription free delivery
+
+      if (shouldApplyFreeDelivery) {
+        finalDeliveryCharges = 0;
+      }
+
+      orderAmount += finalDeliveryCharges + (tipping || 0) + (taxationAmount || 0);
+
+      // Handle subscription order - decrement remaining tiffins
+      if (activeSubscription && activeSubscription.remainingTiffins > 0) {
+        await Subscription.findByIdAndUpdate(activeSubscription._id, {
+          $inc: { remainingTiffins: -1 }
+        });
+      }
+
+      // Handle wallet payment
+      if (paymentMethod && paymentMethod.toLowerCase() === 'wallet') {
+        const currentBalance = customer.customerProfile.currentWalletAmount || 0;
+        const minimumBalance = 100; // Rs. 100 minimum balance requirement
+        const requiredBalance = orderAmount + minimumBalance;
+
+        if (currentBalance < requiredBalance) {
+          throw new Error(`Insufficient wallet balance. Required: Rs. ${requiredBalance.toFixed(2)} (including minimum balance of Rs. ${minimumBalance})`);
+        }
+
+        // Deduct from wallet
+        const newBalance = currentBalance - orderAmount;
+        customer.customerProfile.currentWalletAmount = newBalance;
+
+        // Create wallet transaction
+        await WalletTransaction.create({
+          userId: customer._id,
+          userType: 'CUSTOMER',
+          type: 'DEBIT',
+          amount: orderAmount,
+          balanceAfter: newBalance,
+          description: `Order payment - Order #${generateOrderId()}`,
+          transactionType: 'ORDER_PAYMENT',
+          status: 'COMPLETED',
+          orderId: null // Will be updated after order creation
+        });
+
+        await customer.save();
+      }
 
       const order = await Order.create({
         restaurant,
@@ -3036,7 +3615,7 @@ const resolvers = {
         seller: restaurantDoc.owner,
         items,
         orderAmount,
-        paidAmount: paymentMethod === 'cash' ? 0 : orderAmount,
+        paidAmount: paymentMethod === 'cash' || paymentMethod?.toLowerCase() === 'cash' ? 0 : orderAmount,
         deliveryCharges: deliveryCharges || 0,
         tipping: tipping || 0,
         taxationAmount: taxationAmount || 0,
@@ -3046,13 +3625,59 @@ const resolvers = {
         orderDate: orderDate ? new Date(orderDate) : new Date(),
         isPickedUp: isPickedUp || false,
         orderStatus: 'pending',
-        paymentStatus: paymentMethod === 'cash' ? 'pending' : 'paid',
+        paymentStatus: (paymentMethod === 'cash' || paymentMethod?.toLowerCase() === 'cash') ? 'pending' : 'paid',
         timeline: [{
           status: 'pending',
           note: 'Order placed by customer',
           updatedBy: context.user._id
         }]
       });
+
+      // Update wallet transaction with order ID if wallet payment
+      if (paymentMethod && paymentMethod.toLowerCase() === 'wallet') {
+        await WalletTransaction.updateOne(
+          { userId: customer._id, transactionType: 'ORDER_PAYMENT', orderId: null },
+          { $set: { orderId: order._id } }
+        );
+      }
+
+      // Mark first order as completed
+      if (isFirstOrder) {
+        customer.customerProfile.isFirstOrder = false;
+        await customer.save();
+      }
+
+      // Check and send wallet low balance notification if needed
+      if (paymentMethod && paymentMethod.toLowerCase() === 'wallet') {
+        const { sendWalletLowBalanceNotification } = require('../services/notifications.service');
+        const currentBalance = customer.customerProfile.currentWalletAmount || 0;
+        if (currentBalance < 100) {
+          // Send notification asynchronously (don't block order creation)
+          sendWalletLowBalanceNotification(customer._id, currentBalance).catch(error => {
+            logger.error('Error sending wallet low balance notification', { error: error.message });
+          });
+        }
+      }
+
+      // Check and send subscription expiry notification if needed
+      if (activeSubscription) {
+        const { sendSubscriptionExpiryNotification } = require('../services/notifications.service');
+        const remainingDays = Math.ceil((new Date(activeSubscription.endDate) - new Date()) / (1000 * 60 * 60 * 24));
+        if (remainingDays <= 3 && remainingDays > 0) {
+          // Send notification asynchronously
+          sendSubscriptionExpiryNotification(activeSubscription).catch(error => {
+            logger.error('Error sending subscription expiry notification', { error: error.message });
+          });
+        }
+        
+        // Check and send remaining tiffins notification if low
+        if (activeSubscription.remainingTiffins <= 5 && activeSubscription.remainingTiffins > 0) {
+          const { sendRemainingTiffinsNotification } = require('../services/notifications.service');
+          sendRemainingTiffinsNotification(activeSubscription).catch(error => {
+            logger.error('Error sending remaining tiffins notification', { error: error.message });
+          });
+        }
+      }
 
       // Generate order ID if not auto-generated
       if (!order.orderId) {
@@ -3929,6 +4554,545 @@ const resolvers = {
       };
     },
 
+    // Wallet mutations
+    async addWalletBalance(_, { amount, paymentMethod }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (!amount || amount <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Initialize customerProfile if not exists
+      if (!user.customerProfile) {
+        user.customerProfile = {
+          currentWalletAmount: 0,
+          totalWalletAmount: 0,
+          rewardCoins: 0,
+          isFirstOrder: true
+        };
+      }
+
+      const previousBalance = user.customerProfile.currentWalletAmount || 0;
+      const newBalance = previousBalance + amount;
+
+      // Update wallet
+      user.customerProfile.currentWalletAmount = newBalance;
+      user.customerProfile.totalWalletAmount = (user.customerProfile.totalWalletAmount || 0) + amount;
+
+      // Create transaction record
+      const transaction = await WalletTransaction.create({
+        userId: user._id,
+        userType: 'CUSTOMER',
+        type: 'CREDIT',
+        amount: amount,
+        balanceAfter: newBalance,
+        description: `Wallet top-up via ${paymentMethod}`,
+        transactionType: 'TOP_UP',
+        status: 'COMPLETED',
+        referenceId: `TOPUP_${Date.now()}_${user._id}`
+      });
+
+      await user.save();
+
+      return transaction.toObject();
+    },
+
+    async convertRewardCoinsToWallet(_, { coins }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (!coins || coins < 1000) {
+        throw new Error('Minimum 1000 coins required to convert');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Initialize customerProfile if not exists
+      if (!user.customerProfile) {
+        user.customerProfile = {
+          currentWalletAmount: 0,
+          totalWalletAmount: 0,
+          rewardCoins: 0,
+          isFirstOrder: true
+        };
+      }
+
+      const availableCoins = user.customerProfile.rewardCoins || 0;
+      if (availableCoins < coins) {
+        throw new Error('Insufficient reward coins');
+      }
+
+      // Convert coins to cash: 100 coins = Rs. 1
+      const cashAmount = coins / 100;
+      const previousBalance = user.customerProfile.currentWalletAmount || 0;
+      const newBalance = previousBalance + cashAmount;
+
+      // Update wallet and coins
+      user.customerProfile.currentWalletAmount = newBalance;
+      user.customerProfile.totalWalletAmount = (user.customerProfile.totalWalletAmount || 0) + cashAmount;
+      user.customerProfile.rewardCoins = availableCoins - coins;
+
+      // Create transaction record
+      const transaction = await WalletTransaction.create({
+        userId: user._id,
+        userType: 'CUSTOMER',
+        type: 'CREDIT',
+        amount: cashAmount,
+        balanceAfter: newBalance,
+        description: `Converted ${coins} reward coins to wallet`,
+        transactionType: 'REWARD_COIN_CONVERSION',
+        status: 'COMPLETED',
+        referenceId: `COIN_CONV_${Date.now()}_${user._id}`
+      });
+
+      await user.save();
+
+      return transaction.toObject();
+    },
+
+    // Subscription mutations
+    async createSubscription(_, { restaurantId, planType, paymentMethod }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const restaurant = await Restaurant.findById(restaurantId);
+      if (!restaurant) {
+        throw new Error('Restaurant not found');
+      }
+
+      const user = await User.findById(context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Check if user already has an active subscription
+      const existingSubscription = await Subscription.findOne({
+        userId: user._id,
+        status: 'ACTIVE'
+      });
+
+      if (existingSubscription) {
+        throw new Error('You already have an active subscription. Please cancel it first or wait for it to expire.');
+      }
+
+      // Define plan details
+      const planDetails = {
+        '7_DAYS': { duration: 7, totalTiffins: 14, planName: '7 Days Plan' },
+        '15_DAYS': { duration: 15, totalTiffins: 30, planName: '15 Days Plan' },
+        '1_MONTH': { duration: 30, totalTiffins: 60, planName: '1 Month Plan' },
+        '2_MONTHS': { duration: 60, totalTiffins: 120, planName: '2 Months Plan' },
+        '3_MONTHS': { duration: 90, totalTiffins: 180, planName: '3 Months Plan' }
+      };
+
+      const plan = planDetails[planType];
+      if (!plan) {
+        throw new Error('Invalid plan type');
+      }
+
+      const startDate = new Date();
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + plan.duration);
+
+      // Calculate price (can be customized per restaurant)
+      const price = restaurant.subscriptionPrice?.[planType] || 0; // Default to 0, should be set by admin
+
+      // Handle payment
+      if (paymentMethod && paymentMethod.toLowerCase() === 'wallet') {
+        // Initialize customerProfile if not exists
+        if (!user.customerProfile) {
+          user.customerProfile = {
+            currentWalletAmount: 0,
+            totalWalletAmount: 0,
+            rewardCoins: 0,
+            isFirstOrder: true
+          };
+        }
+
+        const currentBalance = user.customerProfile.currentWalletAmount || 0;
+        if (currentBalance < price) {
+          throw new Error('Insufficient wallet balance');
+        }
+
+        // Deduct from wallet
+        user.customerProfile.currentWalletAmount = currentBalance - price;
+
+        // Create wallet transaction
+        await WalletTransaction.create({
+          userId: user._id,
+          userType: 'CUSTOMER',
+          type: 'DEBIT',
+          amount: price,
+          balanceAfter: user.customerProfile.currentWalletAmount,
+          description: `Subscription payment - ${plan.planName}`,
+          transactionType: 'SUBSCRIPTION_PAYMENT',
+          status: 'COMPLETED'
+        });
+
+        await user.save();
+      }
+
+      // Create subscription
+      const subscription = await Subscription.create({
+        userId: user._id,
+        restaurantId: restaurant._id,
+        planType: planType,
+        planName: plan.planName,
+        duration: plan.duration,
+        totalTiffins: plan.totalTiffins,
+        remainingTiffins: plan.totalTiffins,
+        remainingDays: plan.duration,
+        price: price,
+        startDate: startDate,
+        endDate: endDate,
+        status: 'ACTIVE',
+        freeDelivery: true,
+        paymentMethod: paymentMethod || 'CASH',
+        paymentStatus: (paymentMethod && paymentMethod.toLowerCase() !== 'cash') ? 'PAID' : 'PENDING'
+      });
+
+      return {
+        subscription: subscription.toObject(),
+        message: 'Subscription created successfully',
+        success: true
+      };
+    },
+
+    async updateSubscription(_, { subscriptionId, restaurantId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findById(subscriptionId);
+      if (!subscription) {
+        throw new Error('Subscription not found');
+      }
+
+      if (subscription.userId.toString() !== context.user._id.toString()) {
+        throw new Error('You can only update your own subscription');
+      }
+
+      if (subscription.status !== 'ACTIVE') {
+        throw new Error('Only active subscriptions can be updated');
+      }
+
+      // Check if restaurant change is requested
+      if (restaurantId && restaurantId !== subscription.restaurantId.toString()) {
+        const newRestaurant = await Restaurant.findById(restaurantId);
+        if (!newRestaurant) {
+          throw new Error('New restaurant not found');
+        }
+
+        // Check if restaurant is accepting orders (within acceptance time)
+        // This is a simplified check - you may need to add more logic based on openingTimes
+        if (!newRestaurant.isAvailable) {
+          throw new Error('The selected restaurant is not currently accepting orders');
+        }
+
+        subscription.restaurantId = restaurantId;
+      }
+
+      await subscription.save();
+
+      const updatedSubscription = await Subscription.findById(subscription._id)
+        .populate('restaurantId')
+        .lean();
+
+      return {
+        subscription: updatedSubscription,
+        message: 'Subscription updated successfully',
+        success: true
+      };
+    },
+
+    async cancelSubscription(_, { subscriptionId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findById(subscriptionId);
+      if (!subscription) {
+        throw new Error('Subscription not found');
+      }
+
+      if (subscription.userId.toString() !== context.user._id.toString()) {
+        throw new Error('You can only cancel your own subscription');
+      }
+
+      if (subscription.status !== 'ACTIVE') {
+        throw new Error('Only active subscriptions can be cancelled');
+      }
+
+      subscription.status = 'CANCELLED';
+      await subscription.save();
+
+      return {
+        subscription: subscription.toObject(),
+        message: 'Subscription cancelled successfully',
+        success: true
+      };
+    },
+
+    // Menu schedule mutations
+    async createMenuSchedule(_, { restaurantId, scheduleType, dayOfWeek, date, menuItems }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findOne({
+        _id: restaurantId,
+        owner: context.user._id
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      const scheduleData = {
+        restaurantId: restaurant._id,
+        scheduleType: scheduleType,
+        menuItems: menuItems.map(item => ({
+          productId: item.productId,
+          isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
+          priceOverride: item.priceOverride
+        })),
+        isActive: true
+      };
+
+      if (scheduleType === 'WEEKLY' && dayOfWeek) {
+        scheduleData.dayOfWeek = dayOfWeek;
+      } else if (scheduleType === 'DAILY' && date) {
+        scheduleData.date = new Date(date);
+      }
+
+      const schedule = await MenuSchedule.create(scheduleData);
+
+      return await MenuSchedule.findById(schedule._id)
+        .populate('menuItems.productId')
+        .lean();
+    },
+
+    async updateMenuSchedule(_, { scheduleId, menuItems }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const schedule = await MenuSchedule.findById(scheduleId);
+      if (!schedule) {
+        throw new Error('Menu schedule not found');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findOne({
+        _id: schedule.restaurantId,
+        owner: context.user._id
+      });
+
+      if (!restaurant) {
+        throw new Error('Access denied');
+      }
+
+      schedule.menuItems = menuItems.map(item => ({
+        productId: item.productId,
+        isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
+        priceOverride: item.priceOverride
+      }));
+
+      await schedule.save();
+
+      return await MenuSchedule.findById(schedule._id)
+        .populate('menuItems.productId')
+        .lean();
+    },
+
+    async deleteMenuSchedule(_, { scheduleId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const schedule = await MenuSchedule.findById(scheduleId);
+      if (!schedule) {
+        throw new Error('Menu schedule not found');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findOne({
+        _id: schedule.restaurantId,
+        owner: context.user._id
+      });
+
+      if (!restaurant) {
+        throw new Error('Access denied');
+      }
+
+      await MenuSchedule.findByIdAndDelete(scheduleId);
+      return true;
+    },
+
+    // Holiday request mutations
+    async createHolidayRequest(_, { startDate, endDate, reason }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'rider') {
+        throw new Error('Only riders can create holiday requests');
+      }
+
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      if (end <= start) {
+        throw new Error('End date must be after start date');
+      }
+
+      if (start < new Date()) {
+        throw new Error('Start date cannot be in the past');
+      }
+
+      const request = await HolidayRequest.create({
+        riderId: context.user._id,
+        startDate: start,
+        endDate: end,
+        reason: reason || '',
+        status: 'PENDING'
+      });
+
+      return await HolidayRequest.findById(request._id)
+        .populate('riderId', 'name email phone')
+        .lean();
+    },
+
+    async updateHolidayRequestStatus(_, { requestId, status, rejectionReason }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'admin') {
+        throw new Error('Only admins can update holiday request status');
+      }
+
+      if (!['APPROVED', 'REJECTED', 'CANCELLED'].includes(status)) {
+        throw new Error('Invalid status');
+      }
+
+      const request = await HolidayRequest.findById(requestId);
+      if (!request) {
+        throw new Error('Holiday request not found');
+      }
+
+      if (request.status !== 'PENDING') {
+        throw new Error('Only pending requests can be updated');
+      }
+
+      request.status = status;
+      request.approvedBy = context.user._id;
+      request.approvedAt = new Date();
+
+      if (status === 'REJECTED' && rejectionReason) {
+        request.rejectionReason = rejectionReason;
+      }
+
+      await request.save();
+
+      return await HolidayRequest.findById(request._id)
+        .populate('riderId', 'name email phone')
+        .populate('approvedBy', 'name email')
+        .lean();
+    },
+
+    // Franchise mutations
+    async createFranchise(_, { franchiseInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'admin') {
+        throw new Error('Only admins can create franchises');
+      }
+
+      const franchise = await Franchise.create({
+        name: franchiseInput.name,
+        city: franchiseInput.city,
+        area: franchiseInput.area,
+        workingArea: franchiseInput.workingArea,
+        zone: franchiseInput.zone,
+        owner: franchiseInput.owner,
+        contactPerson: franchiseInput.contactPerson,
+        isActive: franchiseInput.isActive !== undefined ? franchiseInput.isActive : true,
+        startDate: franchiseInput.startDate ? new Date(franchiseInput.startDate) : new Date(),
+        endDate: franchiseInput.endDate ? new Date(franchiseInput.endDate) : undefined
+      });
+
+      return await Franchise.findById(franchise._id)
+        .populate('owner', 'name email phone')
+        .populate('zone')
+        .lean();
+    },
+
+    async updateFranchise(_, { franchiseId, franchiseInput }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'admin') {
+        throw new Error('Only admins can update franchises');
+      }
+
+      const franchise = await Franchise.findById(franchiseId);
+      if (!franchise) {
+        throw new Error('Franchise not found');
+      }
+
+      if (franchiseInput.name) franchise.name = franchiseInput.name;
+      if (franchiseInput.city) franchise.city = franchiseInput.city;
+      if (franchiseInput.area !== undefined) franchise.area = franchiseInput.area;
+      if (franchiseInput.workingArea) franchise.workingArea = franchiseInput.workingArea;
+      if (franchiseInput.zone) franchise.zone = franchiseInput.zone;
+      if (franchiseInput.owner) franchise.owner = franchiseInput.owner;
+      if (franchiseInput.contactPerson) franchise.contactPerson = franchiseInput.contactPerson;
+      if (franchiseInput.isActive !== undefined) franchise.isActive = franchiseInput.isActive;
+      if (franchiseInput.startDate) franchise.startDate = new Date(franchiseInput.startDate);
+      if (franchiseInput.endDate) franchise.endDate = new Date(franchiseInput.endDate);
+
+      await franchise.save();
+
+      return await Franchise.findById(franchise._id)
+        .populate('owner', 'name email phone')
+        .populate('zone')
+        .lean();
+    },
+
+    async deleteFranchise(_, { franchiseId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'admin') {
+        throw new Error('Only admins can delete franchises');
+      }
+
+      const franchise = await Franchise.findById(franchiseId);
+      if (!franchise) {
+        throw new Error('Franchise not found');
+      }
+
+      await Franchise.findByIdAndDelete(franchiseId);
+      return true;
+    },
+
     async updateTimings(_, { id, openingTimes }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
@@ -4394,6 +5558,53 @@ const resolvers = {
       return product;
     },
 
+    async bulkUpdateProducts(_, { productIds, updates }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (!productIds || productIds.length === 0) {
+        throw new Error('At least one product ID is required');
+      }
+
+      // Verify all products belong to the seller
+      const isAdmin = context.user.role === 'admin';
+      const products = await Product.find({ _id: { $in: productIds } }).populate('restaurant');
+
+      if (products.length === 0) {
+        throw new Error('No products found');
+      }
+
+      // Check ownership for each product if not admin
+      if (!isAdmin) {
+        for (const product of products) {
+          const restaurantId = product.restaurant._id || product.restaurant;
+          const restaurant = await Restaurant.findById(restaurantId);
+          if (!restaurant || restaurant.owner.toString() !== context.user._id.toString()) {
+            throw new Error(`Access denied for product ${product._id}`);
+          }
+        }
+      }
+
+      // Build update object
+      const updateObj = {};
+      if (updates.isActive !== undefined) updateObj.isActive = updates.isActive;
+      if (updates.available !== undefined) updateObj.available = updates.available;
+      if (updates.isOutOfStock !== undefined) updateObj.isOutOfStock = updates.isOutOfStock;
+
+      // Perform bulk update
+      const result = await Product.updateMany(
+        { _id: { $in: productIds } },
+        { $set: updateObj }
+      );
+
+      return {
+        success: true,
+        message: `Successfully updated ${result.modifiedCount} product(s)`,
+        updatedCount: result.modifiedCount
+      };
+    },
+
     async deleteProduct(_, { id }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
@@ -4408,7 +5619,7 @@ const resolvers = {
       const isAdmin = context.user.role === 'admin';
       const restaurantId = product.restaurant._id || product.restaurant;
       const restaurant = await Restaurant.findById(restaurantId);
-      
+
       if (!restaurant) {
         throw new Error('Restaurant not found');
       }

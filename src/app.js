@@ -103,6 +103,7 @@ app.use(mongoSanitize());
 app.use(xss());
 app.use(hpp());
 
+// Global rate limiter (fallback for routes not using specific limiters)
 const limiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.max,
@@ -110,7 +111,14 @@ const limiter = rateLimit({
   legacyHeaders: false
 });
 
+// Per-user rate limiter for authenticated routes
+const { userRateLimiter, strictRateLimiter, apiRateLimiter } = require('./middleware/rateLimiter');
+
+// Apply global limiter to all routes
 app.use(limiter);
+
+// Apply API rate limiter to API routes (will be applied to specific routes in routes/index.js)
+// This is a fallback - specific routes can use their own limiters
 
 app.use(metrics.requestMetricsMiddleware);
 
@@ -222,6 +230,7 @@ app.use(maintenance);
 const { ApolloServer } = require('apollo-server-express');
 const typeDefs = require('./graphql/schema');
 const resolvers = require('./graphql/resolvers');
+const { queryComplexityPlugin } = require('./middleware/graphqlComplexity');
 
 let apolloServer = null;
 
@@ -233,6 +242,7 @@ const initializeGraphQL = async (server) => {
       resolvers,
       persistedQueries: false,
       cache: 'bounded',
+      plugins: [queryComplexityPlugin],
       context: async ({ req, connection }) => {
         // Handle subscriptions (connection context) vs queries/mutations (req context)
         if (connection) {

@@ -1,13 +1,61 @@
 const asyncHandler = require('express-async-handler');
+const logger = require('../logger');
 
 /**
- * Middleware to handle image uploads
+ * Image compression utility
+ * Compresses images using sharp if available, otherwise returns original buffer
+ */
+const compressImage = async (buffer, options = {}) => {
+  const {
+    maxWidth = 1920,
+    maxHeight = 1080,
+    quality = 85,
+    format = 'jpeg'
+  } = options;
+
+  try {
+    // Try to use sharp if available
+    const sharp = require('sharp');
+    
+    let image = sharp(buffer);
+    const metadata = await image.metadata();
+    
+    // Resize if image is larger than max dimensions
+    if (metadata.width > maxWidth || metadata.height > maxHeight) {
+      image = image.resize(maxWidth, maxHeight, {
+        fit: 'inside',
+        withoutEnlargement: true
+      });
+    }
+
+    // Compress based on format
+    if (format === 'webp') {
+      return await image.webp({ quality }).toBuffer();
+    } else if (format === 'png') {
+      return await image.png({ quality, compressionLevel: 9 }).toBuffer();
+    } else {
+      return await image.jpeg({ quality, mozjpeg: true }).toBuffer();
+    }
+  } catch (error) {
+    // If sharp is not available or fails, log and return original
+    if (error.code === 'MODULE_NOT_FOUND') {
+      logger.warn('Sharp not installed, skipping image compression. Install sharp for image optimization.');
+    } else {
+      logger.error('Image compression error', { error: error.message });
+    }
+    return buffer; // Return original buffer if compression fails
+  }
+};
+
+/**
+ * Middleware to handle image uploads with compression
  * Currently supports URL input, ready for file upload with multer
  * 
  * For future file upload implementation:
  * 1. Install multer: npm install multer
- * 2. Uncomment multer configuration below
- * 3. Update controller to handle file uploads
+ * 2. Install sharp: npm install sharp
+ * 3. Uncomment multer configuration below
+ * 4. Update controller to handle file uploads
  */
 
 // Future multer configuration (uncomment when multer is installed):
@@ -62,8 +110,40 @@ const validateImageUrl = asyncHandler(async (req, res, next) => {
   next();
 });
 
+/**
+ * Middleware to compress uploaded images
+ * Should be used after multer upload middleware
+ */
+const compressUploadedImage = asyncHandler(async (req, res, next) => {
+  if (req.file && req.file.buffer) {
+    try {
+      const compressedBuffer = await compressImage(req.file.buffer, {
+        maxWidth: 1920,
+        maxHeight: 1080,
+        quality: 85,
+        format: 'jpeg'
+      });
+      
+      // Update file buffer with compressed version
+      req.file.buffer = compressedBuffer;
+      req.file.size = compressedBuffer.length;
+      
+      logger.debug('Image compressed', {
+        originalSize: req.file.originalSize || 'unknown',
+        compressedSize: compressedBuffer.length
+      });
+    } catch (error) {
+      logger.error('Image compression failed', { error: error.message });
+      // Continue with original image if compression fails
+    }
+  }
+  next();
+});
+
 module.exports = {
-  validateImageUrl
+  validateImageUrl,
+  compressImage,
+  compressUploadedImage
   // upload: upload.single('image') // Uncomment when multer is installed
 };
 

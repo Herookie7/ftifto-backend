@@ -73,6 +73,11 @@ const productSchema = new mongoose.Schema(
     stock: { type: Number, default: 0 },
     isOutOfStock: { type: Boolean, default: false },
     subCategory: { type: String, trim: true },
+    menuType: {
+      type: String,
+      enum: ['REGULAR', 'ITEMWISE'],
+      default: 'REGULAR'
+    },
     nutrition: {
       calories: Number,
       protein: Number,
@@ -109,6 +114,14 @@ productSchema.pre('save', function generateSlug(next) {
   
   next();
 });
+
+// Text indexes for search functionality
+productSchema.index({ title: 'text', description: 'text' });
+// Compound indexes for common queries
+productSchema.index({ restaurant: 1, isActive: 1 });
+productSchema.index({ restaurant: 1, isActive: 1, available: 1 });
+productSchema.index({ menuType: 1, isActive: 1 });
+productSchema.index({ categories: 1, isActive: 1 });
 
 module.exports = mongoose.model('Product', productSchema);
 

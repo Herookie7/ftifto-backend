@@ -28,6 +28,7 @@
     "audit:fix": "npm audit fix --audit-level=high",
     "retention:run": "node scripts/runDataRetention.js",
     "compliance": "node scripts/auditSecrets.js",
+    "fix:variations": "node scripts/fix-products-without-variations.js",
     "scale:check": "node scripts/scaleCheck.js",
     "dr:run": "node scripts/disasterRecovery.js",
     "audit:rollup": "node scripts/rollupAuditLogs.js",

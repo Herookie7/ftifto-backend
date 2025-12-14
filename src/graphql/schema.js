@@ -144,6 +144,9 @@ const typeDefs = gql`
     deliveryInfo: DeliveryInfo
     city: String
     postCode: String
+    isPinned: Boolean
+    pinExpiry: Date
+    pinPaymentId: String
   }
 
   type RestaurantPreview {
@@ -245,6 +248,21 @@ const typeDefs = gql`
     bussinessDetails: BussinessDetails
     licenseDetails: LicenseDetails
     vehicleDetails: VehicleDetails
+    # Customer profile fields
+    customerProfile: CustomerProfile
+    rewardCoins: Float
+    referralCode: String
+    referredBy: User
+    isFirstOrder: Boolean
+  }
+
+  type CustomerProfile {
+    currentWalletAmount: Float
+    totalWalletAmount: Float
+    rewardCoins: Float
+    referralCode: String
+    referredBy: ID
+    isFirstOrder: Boolean
   }
 
   type Address {
@@ -755,6 +773,24 @@ const typeDefs = gql`
     totalSales: Float
     totalCODOrders: Int
     totalCardOrders: Int
+    orderStatusBreakdown: OrderStatusBreakdown
+  }
+
+  type SellerDashboardQuickStats {
+    todayOrders: Int
+    todayRevenue: Float
+    pendingOrders: Int
+    activeOrders: Int
+  }
+
+  type OrderStatusBreakdown {
+    received: Int
+    prepared: Int
+    pending: Int
+    onWay: Int
+    return: Int
+    delivered: Int
+    cancelled: Int
   }
 
   type RestaurantDashboardSalesOrderCountDetailsByYear {
@@ -891,6 +927,171 @@ const typeDefs = gql`
     paymentMethod: String
   }
 
+  type WalletTransaction {
+    _id: ID
+    userId: ID
+    userType: String
+    type: String
+    amount: Float
+    balanceAfter: Float
+    description: String
+    transactionType: String
+    orderId: ID
+    referenceId: String
+    status: String
+    createdAt: Date
+    updatedAt: Date
+  }
+
+  type WalletBalance {
+    currentBalance: Float
+    totalAdded: Float
+    minimumBalance: Float
+  }
+
+  type WalletTransactionResponse {
+    data: [WalletTransaction]
+    pagination: PaginationInfo
+  }
+
+  type Subscription {
+    _id: ID
+    userId: ID
+    restaurantId: ID
+    restaurant: Restaurant
+    planType: String
+    planName: String
+    duration: Int
+    totalTiffins: Int
+    remainingTiffins: Int
+    remainingDays: Int
+    price: Float
+    startDate: Date
+    endDate: Date
+    status: String
+    freeDelivery: Boolean
+    paymentMethod: String
+    paymentStatus: String
+    orderId: String
+    createdAt: Date
+    updatedAt: Date
+  }
+
+  type MenuSchedule {
+    _id: ID
+    restaurantId: ID
+    scheduleType: String
+    dayOfWeek: String
+    date: Date
+    menuItems: [MenuScheduleItem]
+    isActive: Boolean
+    createdAt: Date
+    updatedAt: Date
+  }
+
+  type MenuScheduleItem {
+    productId: ID
+    product: Product
+    isAvailable: Boolean
+    priceOverride: Float
+  }
+
+  type HolidayRequest {
+    _id: ID
+    riderId: ID
+    rider: User
+    startDate: Date
+    endDate: Date
+    reason: String
+    status: String
+    approvedBy: User
+    approvedAt: Date
+    rejectionReason: String
+    createdAt: Date
+    updatedAt: Date
+  }
+
+  type Franchise {
+    _id: ID
+    name: String
+    city: String
+    area: String
+    workingArea: Location
+    zone: Zone
+    owner: User
+    contactPerson: ContactPerson
+    isActive: Boolean
+    startDate: Date
+    endDate: Date
+    createdAt: Date
+    updatedAt: Date
+  }
+
+  type ContactPerson {
+    name: String
+    email: String
+    phone: String
+  }
+
+  type SubscriptionExpiryReport {
+    expired: [Subscription]
+    expiringSoon: [Subscription]
+    total: Int
+  }
+
+  type RemainingTiffinsReport {
+    users: [UserRemainingTiffins]
+    total: Int
+  }
+
+  type UserRemainingTiffins {
+    user: User
+    subscription: Subscription
+    remainingTiffins: Int
+    remainingDays: Int
+  }
+
+  type WalletLowBalanceReport {
+    users: [UserWalletBalance]
+    total: Int
+  }
+
+  type UserWalletBalance {
+    user: User
+    currentBalance: Float
+    minimumBalance: Float
+  }
+
+  type WeeklySellerPaymentsReport {
+    sellers: [SellerPayment]
+    totalAmount: Float
+    total: Int
+  }
+
+  type SellerPayment {
+    seller: User
+    restaurant: Restaurant
+    amount: Float
+    ordersCount: Int
+  }
+
+  type SubscriptionPlan {
+    _id: ID
+    planType: String
+    planName: String
+    duration: Int
+    totalTiffins: Int
+    price: Float
+    description: String
+    isActive: Boolean
+  }
+
+  type SubscriptionResponse {
+    subscription: Subscription
+    message: String
+    success: Boolean
+  }
+
   enum UserTypeEnum {
     CUSTOMER
     SELLER
@@ -1008,6 +1209,7 @@ const typeDefs = gql`
     getRestaurantDashboardOrdersSalesStats(restaurant: String!, starting_date: String!, ending_date: String!, dateKeyword: String): RestaurantDashboardOrdersSalesStats
     getRestaurantDashboardSalesOrderCountDetailsByYear(restaurant: String!, year: Int!): RestaurantDashboardSalesOrderCountDetailsByYear
     getDashboardOrderSalesDetailsByPaymentMethod(restaurant: String!, starting_date: String!, ending_date: String!): DashboardOrderSalesDetailsByPaymentMethod
+    getSellerDashboardQuickStats(restaurantId: String!): SellerDashboardQuickStats
     vendors(filters: FiltersInput): [User]
     riders(filters: FiltersInput): [User]
     availableRiders(zoneId: String): [User]
@@ -1037,6 +1239,14 @@ const typeDefs = gql`
     getClonedRestaurants: [Restaurant]
     getClonedRestaurantsPaginated(filters: FiltersInput): RestaurantPaginatedResponse
     getRestaurantDeliveryZoneInfo(restaurantId: String!): RestaurantDeliveryZoneInfo
+    
+    # Wallet queries
+    getWalletBalance: WalletBalance
+    getWalletTransactions(pagination: PaginationInput): WalletTransactionResponse
+    
+    # Subscription queries
+    getUserSubscription: Subscription
+    getSubscriptionPlans: [SubscriptionPlan]
   }
 
   type Mutation {
@@ -1113,6 +1323,7 @@ const typeDefs = gql`
     createProduct(restaurantId: ID!, categoryId: ID, productInput: ProductInput!): Product
     updateProduct(id: ID!, productInput: ProductInput!, categoryId: ID): Product
     deleteProduct(id: ID!): Boolean
+    bulkUpdateProducts(productIds: [ID!]!, updates: BulkProductUpdateInput!): BulkUpdateResponse
     
     # Rider management mutations (Admin app)
     createRider(riderInput: RiderInput!): User
@@ -1124,6 +1335,29 @@ const typeDefs = gql`
     markWebNotificationsAsRead: [WebNotification]
     updateCommission(id: String!, commissionType: String!, commissionRate: Float!): Restaurant
     updateWithdrawReqStatus(id: ID!, status: String!): UpdateWithdrawRequestResponse
+    
+    # Wallet mutations
+    addWalletBalance(amount: Float!, paymentMethod: String!): WalletTransaction
+    convertRewardCoinsToWallet(coins: Int!): WalletTransaction
+    
+    # Subscription mutations
+    createSubscription(restaurantId: String!, planType: String!, paymentMethod: String!): SubscriptionResponse
+    updateSubscription(subscriptionId: String!, restaurantId: String): SubscriptionResponse
+    cancelSubscription(subscriptionId: String!): SubscriptionResponse
+    
+    # Menu schedule mutations
+    createMenuSchedule(restaurantId: String!, scheduleType: String!, dayOfWeek: String, date: String, menuItems: [MenuScheduleItemInput!]!): MenuSchedule
+    updateMenuSchedule(scheduleId: String!, menuItems: [MenuScheduleItemInput!]!): MenuSchedule
+    deleteMenuSchedule(scheduleId: String!): Boolean
+    
+    # Holiday request mutations
+    createHolidayRequest(startDate: String!, endDate: String!, reason: String): HolidayRequest
+    updateHolidayRequestStatus(requestId: String!, status: String!, rejectionReason: String): HolidayRequest
+    
+    # Franchise mutations
+    createFranchise(franchiseInput: FranchiseInput!): Franchise
+    updateFranchise(franchiseId: String!, franchiseInput: FranchiseInput!): Franchise
+    deleteFranchise(franchiseId: String!): Boolean
   }
 
   type Subscription {
@@ -1158,6 +1392,7 @@ const typeDefs = gql`
     appleId: String
     emailIsVerified: Boolean
     isPhoneExists: Boolean
+    referralCode: String
   }
 
   input AddressInput {
@@ -1305,6 +1540,18 @@ const typeDefs = gql`
     addons: [AddonInput]
   }
 
+  input BulkProductUpdateInput {
+    isActive: Boolean
+    available: Boolean
+    isOutOfStock: Boolean
+  }
+
+  type BulkUpdateResponse {
+    success: Boolean
+    message: String
+    updatedCount: Int
+  }
+
   type UploadImageResponse {
     imageUrl: String!
   }
@@ -1323,6 +1570,7 @@ const typeDefs = gql`
     preparationTime: Int
     variations: [Variation]
     addons: [Addon]
+    menuType: String
     restaurant: ID
     createdAt: Date
     updatedAt: Date
@@ -1343,6 +1591,31 @@ const typeDefs = gql`
     zone: ID
     vehicleType: String
     available: Boolean
+  }
+
+  input MenuScheduleItemInput {
+    productId: ID!
+    isAvailable: Boolean
+    priceOverride: Float
+  }
+
+  input FranchiseInput {
+    name: String!
+    city: String!
+    area: String
+    workingArea: LocationInput!
+    zone: ID
+    owner: ID!
+    contactPerson: ContactPersonInput
+    isActive: Boolean
+    startDate: String
+    endDate: String
+  }
+
+  input ContactPersonInput {
+    name: String
+    email: String
+    phone: String
   }
 `;
 

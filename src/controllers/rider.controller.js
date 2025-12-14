@@ -134,10 +134,11 @@ const confirmDelivery = asyncHandler(async (req, res) => {
   // Process financial settlement
   try {
     // Fetch required data for settlement
-    const [restaurant, seller, rider] = await Promise.all([
+    const [restaurant, seller, rider, customer] = await Promise.all([
       Restaurant.findById(order.restaurant),
       order.seller ? User.findById(order.seller) : null,
-      User.findById(req.user._id)
+      User.findById(req.user._id),
+      User.findById(order.customer)
     ]);
 
     // Only process settlement if all required data is available
@@ -150,6 +151,41 @@ const confirmDelivery = asyncHandler(async (req, res) => {
         hasSeller: !!seller,
         hasRider: !!rider
       });
+    }
+
+    // Credit reward coins to customer (100 coins per order)
+    if (customer) {
+      const RewardCoinTransaction = require('../models/RewardCoinTransaction');
+      
+      // Initialize customerProfile if not exists
+      if (!customer.customerProfile) {
+        customer.customerProfile = {
+          currentWalletAmount: 0,
+          totalWalletAmount: 0,
+          rewardCoins: 0,
+          isFirstOrder: true
+        };
+      }
+
+      const coinsToCredit = 100;
+      const previousCoins = customer.customerProfile.rewardCoins || 0;
+      const newCoinBalance = previousCoins + coinsToCredit;
+
+      customer.customerProfile.rewardCoins = newCoinBalance;
+
+      // Create reward coin transaction
+      await RewardCoinTransaction.create({
+        userId: customer._id,
+        type: 'CREDIT',
+        coins: coinsToCredit,
+        balanceAfter: newCoinBalance,
+        description: 'Reward coins for order completion',
+        transactionType: 'ORDER_COMPLETION',
+        orderId: order._id,
+        referenceId: `ORDER_${order.orderId || order._id}`
+      });
+
+      await customer.save();
     }
   } catch (settlementError) {
     // Log error but don't fail the delivery
