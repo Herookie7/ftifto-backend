@@ -4123,13 +4123,19 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      const restaurant = await Restaurant.findOne({ 
-        _id: restaurantId,
-        owner: context.user._id 
-      });
-
+      // Check if user is admin or restaurant owner
+      const isAdmin = context.user.role === 'admin';
+      const restaurant = await Restaurant.findById(restaurantId);
+      
       if (!restaurant) {
-        throw new Error('Restaurant not found or access denied');
+        throw new Error('Restaurant not found');
+      }
+
+      // If not admin, check if user is the owner
+      if (!isAdmin) {
+        if (restaurant.owner.toString() !== context.user._id.toString()) {
+          throw new Error('Access denied');
+        }
       }
 
       const category = await Category.create({
