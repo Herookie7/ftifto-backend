@@ -4147,6 +4147,12 @@ const resolvers = {
         isActive: true
       });
 
+      // Add category to restaurant's categories array
+      if (!restaurant.categories.includes(category._id)) {
+        restaurant.categories.push(category._id);
+        await restaurant.save();
+      }
+
       return category;
     },
 
