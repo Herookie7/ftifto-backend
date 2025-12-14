@@ -1188,11 +1188,28 @@ const resolvers = {
         throw new Error('Only riders can access rider orders');
       }
 
-      // Get orders assigned to this rider or available for assignment
+      // Get rider's zone
+      const rider = await User.findById(context.user._id).populate('zone');
+      const riderZoneId = rider?.zone?._id?.toString();
+
+      // Build query for unassigned orders
+      const unassignedQuery = {
+        orderStatus: 'accepted',
+        rider: null,
+        isActive: true
+      };
+
+      // Filter by zone if rider has a zone
+      // Order.zone is stored as String, so we compare with zone._id as string
+      if (riderZoneId) {
+        unassignedQuery.zone = riderZoneId;
+      }
+
+      // Get orders assigned to this rider or available for assignment in their zone
       const orders = await Order.find({
         $or: [
-          { rider: context.user._id },
-          { orderStatus: 'accepted', rider: null }
+          { rider: context.user._id },  // Orders assigned to this rider
+          unassignedQuery  // Unassigned orders in rider's zone
         ],
         isActive: true
       })
@@ -3096,6 +3113,17 @@ const resolvers = {
         order
       });
 
+      // Emit zone order update so riders in the zone see the new order
+      if (restaurant?.zone) {
+        const { bridgeZoneOrder } = require('../graphql/subscriptionBridge');
+        const populatedOrder = await Order.findById(order._id)
+          .populate('restaurant', '_id name image address location')
+          .populate('customer', '_id name phone')
+          .populate('rider', '_id name username')
+          .lean();
+        bridgeZoneOrder(restaurant.zone.toString(), populatedOrder);
+      }
+
       auditLogger.logEvent({
         category: 'orders',
         action: 'accepted',
@@ -3276,26 +3304,48 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      const order = await Order.findById(id);
-      if (!order) {
-        throw new Error('Order not found');
-      }
-
       // Verify user is a rider
       if (context.user.userType !== 'rider') {
         throw new Error('Only riders can assign orders');
       }
 
-      // Assign rider to order
-      order.rider = context.user._id;
-      order.orderStatus = 'assigned';
-      order.assignedAt = new Date();
-      await order.save();
+      // Atomic check: Only assign if order is still unassigned
+      // This prevents race conditions where multiple riders try to assign the same order
+      const order = await Order.findOneAndUpdate(
+        { 
+          _id: id, 
+          orderStatus: 'accepted',
+          rider: null  // Only assign if no rider yet
+        },
+        { 
+          $set: { 
+            rider: context.user._id,
+            orderStatus: 'assigned',
+            assignedAt: new Date()
+          }
+        },
+        { new: true }
+      );
 
+      if (!order) {
+        throw new Error('Order is no longer available. It may have been assigned to another rider.');
+      }
+
+      // Emit order update
       emitOrderUpdate(order._id.toString(), {
         action: 'assigned',
         order
       });
+
+      // Emit removal to zone so other riders know order is taken
+      const restaurant = await Restaurant.findById(order.restaurant);
+      if (restaurant?.zone) {
+        const { bridgeZoneOrder } = require('../graphql/subscriptionBridge');
+        bridgeZoneOrder(restaurant.zone.toString(), {
+          ...order.toObject(),
+          _removed: true
+        });
+      }
 
       return await Order.findById(order._id)
         .populate('restaurant')
@@ -4625,6 +4675,36 @@ const resolvers = {
             const result = await channel.next();
             if (result.done) break;
             yield result.value;
+          }
+        } finally {
+          cleanup();
+        }
+      }
+    },
+    subscriptionZoneOrders: {
+      subscribe: async function* (_, { zoneId }, context) {
+        if (!context.user || context.user.role !== 'rider') {
+          throw new Error('Authentication required');
+        }
+
+        // Register subscription and get channel
+        const { channel, cleanup } = registerSubscription('zoneOrders', zoneId);
+
+        try {
+          while (true) {
+            const result = await channel.next();
+            if (result.done) break;
+            
+            // Handle removal flag
+            const orderData = result.value;
+            const origin = orderData._removed ? 'remove' : 'new';
+            
+            // Remove the _removed flag before sending
+            if (orderData._removed) {
+              delete orderData._removed;
+            }
+            
+            yield { zoneId, origin, order: orderData };
           }
         } finally {
           cleanup();

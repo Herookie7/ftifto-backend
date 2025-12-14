@@ -527,6 +527,12 @@ const typeDefs = gql`
     order: Order
   }
 
+  type ZoneOrderUpdate {
+    zoneId: String
+    origin: String
+    order: Order
+  }
+
   type EarningsData {
     grandTotalEarnings: GrandTotalEarnings
     earnings: [EarningsDetail]
@@ -1125,6 +1131,7 @@ const typeDefs = gql`
     subscriptionRiderLocation(riderId: String!): User
     orderStatusChanged(userId: String!): OrderStatusUpdate
     subscriptionNewMessage(order: ID!): ChatMessage
+    subscriptionZoneOrders(zoneId: String!): ZoneOrderUpdate
   }
 
   input ReviewInput {

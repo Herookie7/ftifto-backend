@@ -4,7 +4,8 @@ const activeSubscriptions = {
   orders: new Map(),
   riderLocations: new Map(),
   orderStatus: new Map(),
-  chatMessages: new Map()
+  chatMessages: new Map(),
+  zoneOrders: new Map()
 };
 
 // Bridge Socket.IO events to GraphQL subscriptions
@@ -40,6 +41,15 @@ const bridgeChatMessage = (orderId, messageData) => {
   if (channels) {
     channels.forEach(channel => {
       channel.push(messageData);
+    });
+  }
+};
+
+const bridgeZoneOrder = (zoneId, orderData) => {
+  const channels = activeSubscriptions.zoneOrders.get(zoneId);
+  if (channels) {
+    channels.forEach(channel => {
+      channel.push(orderData);
     });
   }
 };
@@ -106,6 +116,7 @@ module.exports = {
   bridgeOrderUpdate,
   bridgeRiderLocation,
   bridgeOrderStatusChange,
-  bridgeChatMessage
+  bridgeChatMessage,
+  bridgeZoneOrder
 };
 
