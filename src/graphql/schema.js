@@ -1247,6 +1247,10 @@ const typeDefs = gql`
     # Subscription queries
     getUserSubscription: Subscription
     getSubscriptionPlans: [SubscriptionPlan]
+
+    # Menu schedule queries (Seller app)
+    getMenuSchedules(restaurantId: ID!, scheduleType: String): [MenuSchedule]
+    getMenuSchedule(scheduleId: ID!): MenuSchedule
   }
 
   type Mutation {
