@@ -1546,11 +1546,11 @@ const resolvers = {
       const monthAgo = new Date(today);
       monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-      // Count by role
-      const usersCount = await User.countDocuments({ role: 'customer' });
-      const vendorsCount = await User.countDocuments({ role: 'seller' });
-      const restaurantsCount = await Restaurant.countDocuments({ isActive: true });
-      const ridersCount = await User.countDocuments({ role: 'rider' });
+      // Count by role (scalar values)
+      const usersCountScalar = await User.countDocuments({ role: 'customer' });
+      const vendorsCountScalar = await User.countDocuments({ role: 'seller' });
+      const restaurantsCountScalar = await Restaurant.countDocuments({ isActive: true });
+      const ridersCountScalar = await User.countDocuments({ role: 'rider' });
 
       // Legacy fields for backward compatibility
       const total = await User.countDocuments();
@@ -1560,11 +1560,13 @@ const resolvers = {
       const newThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo } });
       const newThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo } });
 
+      // Wrap scalar counts in single-element arrays to satisfy the schema
+      // (DashboardUsersResponse.*Count fields are defined as [Int])
       return {
-        usersCount,
-        vendorsCount,
-        restaurantsCount,
-        ridersCount,
+        usersCount: [usersCountScalar],
+        vendorsCount: [vendorsCountScalar],
+        restaurantsCount: [restaurantsCountScalar],
+        ridersCount: [ridersCountScalar],
         total,
         active,
         inactive,
