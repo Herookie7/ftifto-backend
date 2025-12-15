@@ -39,6 +39,5 @@ const referralTransactionSchema = new mongoose.Schema(
 );
 
 referralTransactionSchema.index({ referrerId: 1, createdAt: -1 });
-referralTransactionSchema.index({ referredUserId: 1 });
 
 module.exports = mongoose.model('ReferralTransaction', referralTransactionSchema);

@@ -6,6 +6,7 @@ const withdrawRequestSchema = new mongoose.Schema(
       type: String,
       unique: true,
       default: () => `WR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      // Note: unique creates an index for this field; avoid adding a duplicate schema.index
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -62,7 +63,6 @@ const withdrawRequestSchema = new mongoose.Schema(
 
 withdrawRequestSchema.index({ userId: 1, status: 1 });
 withdrawRequestSchema.index({ userType: 1, status: 1 });
-withdrawRequestSchema.index({ requestId: 1 });
 
 module.exports = mongoose.model('WithdrawRequest', withdrawRequestSchema);
 
