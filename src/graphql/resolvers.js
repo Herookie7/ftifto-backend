@@ -147,6 +147,7 @@ const resolvers = {
             model: 'Product'
           }
         })
+        .populate('zone')
         .lean();
 
       // Sort: pinned restaurants first, then by rating
@@ -160,8 +161,6 @@ const resolvers = {
         // If both pinned or both not pinned, sort by rating
         return (b.rating || 0) - (a.rating || 0);
       });
-        .populate('zone')
-        .lean();
 
       // Filter by distance if coordinates provided
       if (latitude && longitude) {
@@ -194,7 +193,7 @@ const resolvers = {
       const offers = await Offer.find({ isActive: true }).lean();
       const sections = await Section.find({ isActive: true }).lean();
 
-      return {
+      const result = {
         offers: offers.map((o) => ({
           _id: o._id,
           name: o.name,
