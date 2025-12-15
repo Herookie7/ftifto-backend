@@ -828,39 +828,37 @@ const resolvers = {
     async getVersions() {
       const config = await Configuration.getConfiguration();
       
-      // Parse customerAppVersion if it's a JSON string, otherwise create default structure
-      let customerAppVersion = { android: null, ios: null };
-      
-      if (config.customerAppVersion) {
+      // Helper function to parse version string (format: "android|ios" or just version string)
+      const parseVersion = (versionStr) => {
+        if (!versionStr) return { android: null, ios: null };
+        
         try {
-          // Try to parse as JSON if it's a string
-          if (typeof config.customerAppVersion === 'string') {
-            const parsed = JSON.parse(config.customerAppVersion);
-            if (parsed.android || parsed.ios) {
-              customerAppVersion = parsed;
-            } else {
-              // If it's just a version string, use it for both platforms
-              customerAppVersion = {
-                android: config.customerAppVersion,
-                ios: config.customerAppVersion
-              };
-            }
-          } else if (typeof config.customerAppVersion === 'object') {
-            customerAppVersion = config.customerAppVersion;
+          // Try to parse as JSON first
+          const parsed = JSON.parse(versionStr);
+          if (parsed.android || parsed.ios) {
+            return parsed;
           }
         } catch (e) {
-          // If parsing fails, treat as single version string
-          customerAppVersion = {
-            android: config.customerAppVersion,
-            ios: config.customerAppVersion
-          };
+          // Not JSON, continue
         }
-      }
+        
+        // Check if it's pipe-separated format (android|ios)
+        if (typeof versionStr === 'string' && versionStr.includes('|')) {
+          const [android, ios] = versionStr.split('|');
+          return { android: android || null, ios: ios || null };
+        }
+        
+        // Otherwise treat as single version for both platforms
+        return {
+          android: versionStr,
+          ios: versionStr
+        };
+      };
       
       return {
-        customerAppVersion,
-        riderAppVersion: null, // Add if needed
-        restaurantAppVersion: null // Add if needed
+        customerAppVersion: parseVersion(config.customerAppVersion),
+        riderAppVersion: parseVersion(config.riderAppVersion),
+        restaurantAppVersion: parseVersion(config.restaurantAppVersion)
       };
     },
 
@@ -2808,11 +2806,128 @@ const resolvers = {
     },
 
     // Set app versions
-    async setVersions(_, { customerAppVersion }) {
+    async setVersions(_, { customerAppVersion, riderAppVersion, restaurantAppVersion }) {
       const configDoc = await Configuration.getConfiguration();
-      configDoc.customerAppVersion = customerAppVersion;
+      if (customerAppVersion) {
+        configDoc.customerAppVersion = `${customerAppVersion.android || ''}|${customerAppVersion.ios || ''}`;
+      }
+      if (riderAppVersion) {
+        configDoc.riderAppVersion = `${riderAppVersion.android || ''}|${riderAppVersion.ios || ''}`;
+      }
+      if (restaurantAppVersion) {
+        configDoc.restaurantAppVersion = `${restaurantAppVersion.android || ''}|${restaurantAppVersion.ios || ''}`;
+      }
       await configDoc.save();
       return 'success';
+    },
+
+    // Configuration mutations
+    async saveEmailConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.email !== undefined) configDoc.email = configurationInput.email;
+      if (configurationInput.emailName !== undefined) configDoc.emailName = configurationInput.emailName;
+      if (configurationInput.password !== undefined) configDoc.password = configurationInput.password;
+      if (configurationInput.enableEmail !== undefined) configDoc.enableEmail = configurationInput.enableEmail;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveStripeConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.publishableKey !== undefined) configDoc.publishableKey = configurationInput.publishableKey;
+      if (configurationInput.secretKey !== undefined) configDoc.secretKey = configurationInput.secretKey;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async savePaypalConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.clientId !== undefined) configDoc.clientId = configurationInput.clientId;
+      if (configurationInput.clientSecret !== undefined) configDoc.clientSecret = configurationInput.clientSecret;
+      if (configurationInput.sandbox !== undefined) configDoc.sandbox = configurationInput.sandbox;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveCurrencyConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.currency !== undefined) configDoc.currency = configurationInput.currency;
+      if (configurationInput.currencySymbol !== undefined) configDoc.currencySymbol = configurationInput.currencySymbol;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveDeliveryRateConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.deliveryRate !== undefined) configDoc.deliveryRate = configurationInput.deliveryRate;
+      if (configurationInput.costType !== undefined) configDoc.costType = configurationInput.costType;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveGoogleApiKeyConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.googleApiKey !== undefined) configDoc.googleApiKey = configurationInput.googleApiKey;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveCloudinaryConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.cloudinaryUploadUrl !== undefined) configDoc.cloudinaryUploadUrl = configurationInput.cloudinaryUploadUrl;
+      if (configurationInput.cloudinaryApiKey !== undefined) configDoc.cloudinaryApiKey = configurationInput.cloudinaryApiKey;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveGoogleClientIDConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.webClientID !== undefined) configDoc.webClientID = configurationInput.webClientID;
+      if (configurationInput.androidClientID !== undefined) configDoc.androidClientID = configurationInput.androidClientID;
+      if (configurationInput.iOSClientID !== undefined) configDoc.iOSClientID = configurationInput.iOSClientID;
+      if (configurationInput.expoClientID !== undefined) configDoc.expoClientID = configurationInput.expoClientID;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveFirebaseConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.firebaseKey !== undefined) configDoc.firebaseKey = configurationInput.firebaseKey;
+      if (configurationInput.authDomain !== undefined) configDoc.authDomain = configurationInput.authDomain;
+      if (configurationInput.projectId !== undefined) configDoc.projectId = configurationInput.projectId;
+      if (configurationInput.storageBucket !== undefined) configDoc.storageBucket = configurationInput.storageBucket;
+      if (configurationInput.msgSenderId !== undefined) configDoc.msgSenderId = configurationInput.msgSenderId;
+      if (configurationInput.appId !== undefined) configDoc.appId = configurationInput.appId;
+      if (configurationInput.measurementId !== undefined) configDoc.measurementId = configurationInput.measurementId;
+      if (configurationInput.vapidKey !== undefined) configDoc.vapidKey = configurationInput.vapidKey;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveAppConfigurations(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.termsAndConditions !== undefined) configDoc.termsAndConditions = configurationInput.termsAndConditions;
+      if (configurationInput.privacyPolicy !== undefined) configDoc.privacyPolicy = configurationInput.privacyPolicy;
+      if (configurationInput.testOtp !== undefined) configDoc.testOtp = configurationInput.testOtp;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveVerificationsToggle(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.skipEmailVerification !== undefined) configDoc.skipEmailVerification = configurationInput.skipEmailVerification;
+      if (configurationInput.skipMobileVerification !== undefined) configDoc.skipMobileVerification = configurationInput.skipMobileVerification;
+      if (configurationInput.skipWhatsAppOTP !== undefined) configDoc.skipWhatsAppOTP = configurationInput.skipWhatsAppOTP;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveWebConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.googleMapLibraries !== undefined) configDoc.googleMapLibraries = configurationInput.googleMapLibraries;
+      if (configurationInput.googleColor !== undefined) configDoc.googleColor = configurationInput.googleColor;
+      await configDoc.save();
+      return configDoc;
     },
 
     // Authentication Mutations

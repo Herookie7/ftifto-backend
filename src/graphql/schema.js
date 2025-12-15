@@ -414,8 +414,8 @@ const typeDefs = gql`
 
   type Versions {
     customerAppVersion: AppVersion
-    riderAppVersion: String
-    restaurantAppVersion: String
+    riderAppVersion: AppVersion
+    restaurantAppVersion: AppVersion
   }
 
   type Banner {
@@ -1147,6 +1147,90 @@ const typeDefs = gql`
     endTime: String!
   }
 
+  # Configuration Input Types
+  input EmailConfigurationInput {
+    email: String
+    emailName: String
+    password: String
+    enableEmail: Boolean
+  }
+
+  input StripeConfigurationInput {
+    publishableKey: String
+    secretKey: String
+  }
+
+  input PaypalConfigurationInput {
+    clientId: String
+    clientSecret: String
+    sandbox: Boolean
+  }
+
+  input CurrencyConfigurationInput {
+    currency: String
+    currencySymbol: String
+  }
+
+  input DeliveryCostConfigurationInput {
+    deliveryRate: Float
+    costType: String
+  }
+
+  input GoogleApiKeyConfigurationInput {
+    googleApiKey: String
+  }
+
+  input CloudinaryConfigurationInput {
+    cloudinaryUploadUrl: String
+    cloudinaryApiKey: String
+  }
+
+  input GoogleClientIDConfigurationInput {
+    webClientID: String
+    androidClientID: String
+    iOSClientID: String
+    expoClientID: String
+  }
+
+  input FirebaseConfigurationInput {
+    firebaseKey: String
+    authDomain: String
+    projectId: String
+    storageBucket: String
+    msgSenderId: String
+    appId: String
+    measurementId: String
+    vapidKey: String
+  }
+
+  input AppConfigurationsInput {
+    termsAndConditions: String
+    privacyPolicy: String
+    testOtp: String
+  }
+
+  input VerificationConfigurationInput {
+    skipEmailVerification: Boolean
+    skipMobileVerification: Boolean
+    skipWhatsAppOTP: Boolean
+  }
+
+  input WebConfigurationInput {
+    googleMapLibraries: String
+    googleColor: String
+  }
+
+  input VersionsInput {
+    customerAppVersion: AppVersionInput
+    riderAppVersion: AppVersionInput
+    restaurantAppVersion: AppVersionInput
+  }
+
+  input AppVersionInput {
+    android: String
+    ios: String
+  }
+
   type Query {
     # Restaurant queries
     nearByRestaurants(latitude: Float, longitude: Float, shopType: String): RestaurantListResponse
@@ -1260,7 +1344,19 @@ const typeDefs = gql`
     selectAddress(id: String!): User
     updateUser(updateUserInput: UpdateUserInput!): User
     # Configuration mutations
-    setVersions(customerAppVersion: String!): String
+    setVersions(customerAppVersion: AppVersionInput, riderAppVersion: AppVersionInput, restaurantAppVersion: AppVersionInput): String
+    saveEmailConfiguration(configurationInput: EmailConfigurationInput!): Configuration
+    saveStripeConfiguration(configurationInput: StripeConfigurationInput!): Configuration
+    savePaypalConfiguration(configurationInput: PaypalConfigurationInput!): Configuration
+    saveCurrencyConfiguration(configurationInput: CurrencyConfigurationInput!): Configuration
+    saveDeliveryRateConfiguration(configurationInput: DeliveryCostConfigurationInput!): Configuration
+    saveGoogleApiKeyConfiguration(configurationInput: GoogleApiKeyConfigurationInput!): Configuration
+    saveCloudinaryConfiguration(configurationInput: CloudinaryConfigurationInput!): Configuration
+    saveGoogleClientIDConfiguration(configurationInput: GoogleClientIDConfigurationInput!): Configuration
+    saveFirebaseConfiguration(configurationInput: FirebaseConfigurationInput!): Configuration
+    saveAppConfigurations(configurationInput: AppConfigurationsInput!): Configuration
+    saveVerificationsToggle(configurationInput: VerificationConfigurationInput!): Configuration
+    saveWebConfiguration(configurationInput: WebConfigurationInput!): Configuration
 
     # Authentication mutations
     login(email: String, password: String, type: String!, appleId: String, name: String, notificationToken: String): LoginResponse
