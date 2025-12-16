@@ -359,6 +359,14 @@ const typeDefs = gql`
     # Stripe configuration
     publishableKey: String
     secretKey: String
+    # Razorpay configuration
+    razorpayKeyId: String
+    razorpayKeySecret: String
+    razorpaySandbox: Boolean
+    # Fast2SMS configuration
+    fast2smsApiKey: String
+    fast2smsEnabled: Boolean
+    fast2smsRoute: String
     # WhatsApp OTP
     skipWhatsAppOTP: Boolean
     # SendGrid configuration
@@ -1166,6 +1174,18 @@ const typeDefs = gql`
     sandbox: Boolean
   }
 
+  input RazorpayConfigurationInput {
+    keyId: String
+    keySecret: String
+    sandbox: Boolean
+  }
+
+  input Fast2SMSConfigurationInput {
+    apiKey: String
+    enabled: Boolean
+    route: String
+  }
+
   input CurrencyConfigurationInput {
     currency: String
     currencySymbol: String
@@ -1348,6 +1368,8 @@ const typeDefs = gql`
     saveEmailConfiguration(configurationInput: EmailConfigurationInput!): Configuration
     saveStripeConfiguration(configurationInput: StripeConfigurationInput!): Configuration
     savePaypalConfiguration(configurationInput: PaypalConfigurationInput!): Configuration
+    saveRazorpayConfiguration(configurationInput: RazorpayConfigurationInput!): Configuration
+    saveFast2SMSConfiguration(configurationInput: Fast2SMSConfigurationInput!): Configuration
     saveCurrencyConfiguration(configurationInput: CurrencyConfigurationInput!): Configuration
     saveDeliveryRateConfiguration(configurationInput: DeliveryCostConfigurationInput!): Configuration
     saveGoogleApiKeyConfiguration(configurationInput: GoogleApiKeyConfigurationInput!): Configuration
@@ -1385,6 +1407,7 @@ const typeDefs = gql`
 
     # Order mutations
     placeOrder(restaurant: String!, orderInput: [OrderInput!]!, paymentMethod: String!, couponCode: String, tipping: Float!, taxationAmount: Float!, address: AddressInput!, orderDate: String!, isPickedUp: Boolean!, deliveryCharges: Float!, instructions: String): Order
+    verifyRazorpayPayment(orderId: String!, razorpayOrderId: String!, razorpayPaymentId: String!, razorpaySignature: String!): Order
     abortOrder(id: String!): Order
     acceptOrder(_id: String!, time: String): Order
     cancelOrder(_id: String!, reason: String!): Order

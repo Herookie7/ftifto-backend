@@ -36,6 +36,16 @@ const configurationSchema = new mongoose.Schema(
     clientSecret: { type: String, trim: true },
     sandbox: { type: Boolean, default: false },
     
+    // Razorpay
+    razorpayKeyId: { type: String, trim: true },
+    razorpayKeySecret: { type: String, trim: true },
+    razorpaySandbox: { type: Boolean, default: false },
+    
+    // Fast2SMS
+    fast2smsApiKey: { type: String, trim: true },
+    fast2smsEnabled: { type: Boolean, default: false },
+    fast2smsRoute: { type: String, trim: true, default: 'q' },
+    
     // Cloudinary
     cloudinaryUploadUrl: { type: String, trim: true },
     cloudinaryApiKey: { type: String, trim: true },

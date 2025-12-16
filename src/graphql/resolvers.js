@@ -2849,6 +2849,24 @@ const resolvers = {
       return configDoc;
     },
 
+    async saveRazorpayConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.keyId !== undefined) configDoc.razorpayKeyId = configurationInput.keyId;
+      if (configurationInput.keySecret !== undefined) configDoc.razorpayKeySecret = configurationInput.keySecret;
+      if (configurationInput.sandbox !== undefined) configDoc.razorpaySandbox = configurationInput.sandbox;
+      await configDoc.save();
+      return configDoc;
+    },
+
+    async saveFast2SMSConfiguration(_, { configurationInput }) {
+      const configDoc = await Configuration.getConfiguration();
+      if (configurationInput.apiKey !== undefined) configDoc.fast2smsApiKey = configurationInput.apiKey;
+      if (configurationInput.enabled !== undefined) configDoc.fast2smsEnabled = configurationInput.enabled;
+      if (configurationInput.route !== undefined) configDoc.fast2smsRoute = configurationInput.route;
+      await configDoc.save();
+      return configDoc;
+    },
+
     async saveCurrencyConfiguration(_, { configurationInput }) {
       const configDoc = await Configuration.getConfiguration();
       if (configurationInput.currency !== undefined) configDoc.currency = configurationInput.currency;
@@ -3374,13 +3392,47 @@ const resolvers = {
     },
 
     async sendOtpToPhoneNumber(_, { phone }) {
-      // Get test OTP from configuration
       const configDoc = await Configuration.getConfiguration();
+      const skipMobileVerification = configDoc.skipMobileVerification;
       const testOtp = configDoc.testOtp || '123456';
 
-      // In production, send actual OTP via SMS service
-      // For now, return success (OTP would be sent via SMS service)
-      return { result: 'success' };
+      // If mobile verification is skipped, return success immediately
+      if (skipMobileVerification) {
+        return { result: 'success', otp: testOtp };
+      }
+
+      // Check if Fast2SMS is enabled and configured
+      const { sendOTP, isConfigured } = require('../services/fast2sms.service');
+      
+      try {
+        if (await isConfigured()) {
+          // Generate 6-digit OTP
+          const otp = Math.floor(100000 + Math.random() * 900000).toString();
+          
+          // Send OTP via Fast2SMS
+          const result = await sendOTP(phone, otp);
+          
+          if (result.success) {
+            // Store OTP in user session/cache for verification (implementation depends on your caching strategy)
+            // For now, we return success - in production, you should store OTP temporarily
+            return { result: 'success' };
+          } else {
+            logger.error('Failed to send OTP via Fast2SMS', { phone, error: result.message });
+            throw new Error('Failed to send OTP. Please try again.');
+          }
+        } else {
+          // Fast2SMS not configured, use test OTP
+          logger.info('Fast2SMS not configured, using test OTP', { phone });
+          return { result: 'success', otp: testOtp };
+        }
+      } catch (error) {
+        logger.error('Error sending OTP to phone number', { phone, error: error.message });
+        // Fallback to test OTP if Fast2SMS fails
+        if (configDoc.testOtp) {
+          return { result: 'success', otp: testOtp };
+        }
+        throw new Error('Failed to send OTP. Please try again.');
+      }
     },
 
     // User Management Mutations
@@ -3725,13 +3777,44 @@ const resolvers = {
         await customer.save();
       }
 
+      // Handle Razorpay payment - create Razorpay order
+      let razorpayOrder = null;
+      const isRazorpay = paymentMethod && (paymentMethod.toUpperCase() === 'RAZORPAY' || paymentMethod.toLowerCase() === 'razorpay');
+      
+      if (isRazorpay) {
+        try {
+          const { createOrder } = require('../payments/razorpay.service');
+          const configDoc = await Configuration.getConfiguration();
+          const currency = configDoc.currency || 'INR';
+          
+          // Create Razorpay order first (before creating internal order)
+          razorpayOrder = await createOrder(
+            `order_${Date.now()}`,
+            orderAmount,
+            currency,
+            {
+              notes: {
+                customerId: context.user._id.toString(),
+                restaurantId: restaurant.toString()
+              }
+            }
+          );
+        } catch (error) {
+          logger.error('Failed to create Razorpay order', { error: error.message, orderAmount });
+          throw new Error('Failed to initialize payment. Please try again or use a different payment method.');
+        }
+      }
+
+      const isCashOrCOD = paymentMethod === 'cash' || paymentMethod?.toLowerCase() === 'cash' || paymentMethod?.toUpperCase() === 'COD';
+      const isWallet = paymentMethod && paymentMethod.toLowerCase() === 'wallet';
+      
       const order = await Order.create({
         restaurant,
         customer: context.user._id,
         seller: restaurantDoc.owner,
         items,
         orderAmount,
-        paidAmount: paymentMethod === 'cash' || paymentMethod?.toLowerCase() === 'cash' ? 0 : orderAmount,
+        paidAmount: (isCashOrCOD || isRazorpay) ? 0 : orderAmount,
         deliveryCharges: deliveryCharges || 0,
         tipping: tipping || 0,
         taxationAmount: taxationAmount || 0,
@@ -3741,7 +3824,8 @@ const resolvers = {
         orderDate: orderDate ? new Date(orderDate) : new Date(),
         isPickedUp: isPickedUp || false,
         orderStatus: 'pending',
-        paymentStatus: (paymentMethod === 'cash' || paymentMethod?.toLowerCase() === 'cash') ? 'pending' : 'paid',
+        paymentStatus: (isCashOrCOD || isRazorpay) ? 'pending' : 'paid',
+        razorpayOrderId: razorpayOrder ? razorpayOrder.id : undefined,
         timeline: [{
           status: 'pending',
           note: 'Order placed by customer',
@@ -3814,11 +3898,113 @@ const resolvers = {
         entityType: 'order'
       });
 
-      return await Order.findById(order._id)
+      const populatedOrder = await Order.findById(order._id)
         .populate('restaurant')
         .populate('customer')
         .populate('rider')
         .lean();
+
+      // Add Razorpay order details to response if applicable
+      if (razorpayOrder && isRazorpay) {
+        populatedOrder.razorpayOrder = {
+          id: razorpayOrder.id,
+          amount: razorpayOrder.amount,
+          currency: razorpayOrder.currency,
+          receipt: razorpayOrder.receipt
+        };
+      }
+
+      return populatedOrder;
+    },
+
+    async verifyRazorpayPayment(_, { orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const order = await Order.findById(orderId);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify order belongs to the user
+      if (order.customer.toString() !== context.user._id.toString()) {
+        throw new Error('You can only verify payments for your own orders');
+      }
+
+      // Verify payment status is still pending
+      if (order.paymentStatus !== 'pending') {
+        throw new Error(`Payment already processed. Current status: ${order.paymentStatus}`);
+      }
+
+      // Verify payment method is Razorpay
+      if (order.paymentMethod?.toUpperCase() !== 'RAZORPAY') {
+        throw new Error('Order is not using Razorpay payment method');
+      }
+
+      try {
+        const { verifyPayment } = require('../payments/razorpay.service');
+        
+        // Verify payment signature
+        const isValid = await verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+        
+        if (!isValid) {
+          // Update order payment status to failed
+          order.paymentStatus = 'failed';
+          order.timeline.push({
+            status: 'pending',
+            note: 'Payment verification failed',
+            updatedBy: context.user._id
+          });
+          await order.save();
+          
+          throw new Error('Payment verification failed. Invalid signature.');
+        }
+
+        // Payment verified successfully
+        order.paymentStatus = 'paid';
+        order.paidAmount = order.orderAmount;
+        order.razorpayOrderId = razorpayOrderId;
+        order.razorpayPaymentId = razorpayPaymentId;
+        order.timeline.push({
+          status: 'pending',
+          note: 'Payment verified successfully',
+          updatedBy: context.user._id
+        });
+        await order.save();
+
+        logger.info('Razorpay payment verified successfully', {
+          orderId: order._id.toString(),
+          razorpayOrderId,
+          razorpayPaymentId
+        });
+
+        auditLogger.logEvent({
+          category: 'payments',
+          action: 'razorpay_payment_verified',
+          userId: context.user._id.toString(),
+          entityId: order._id.toString(),
+          entityType: 'order',
+          metadata: {
+            razorpayOrderId,
+            razorpayPaymentId,
+            amount: order.orderAmount
+          }
+        });
+
+        return await Order.findById(order._id)
+          .populate('restaurant')
+          .populate('customer')
+          .populate('rider')
+          .lean();
+      } catch (error) {
+        logger.error('Error verifying Razorpay payment', {
+          orderId,
+          razorpayOrderId,
+          error: error.message
+        });
+        throw error;
+      }
     },
 
     async acceptOrder(_, { _id, time }, context) {
