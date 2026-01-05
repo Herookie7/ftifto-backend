@@ -4281,7 +4281,7 @@ const resolvers = {
         .lean();
     },
 
-    async updateOrderStatusRider(_, { id, status }, context) {
+    async updateOrderStatusRider(_, { id, status, reason }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -4298,12 +4298,19 @@ const resolvers = {
 
       order.orderStatus = status;
       
+      // Store reason if provided (for not delivered/cancelled orders)
+      if (reason && (status === 'cancelled' || status === 'returned' || status === 'not_delivered')) {
+        order.reason = reason;
+      }
+      
       // Update timestamps based on status
       if (status === 'picked') {
         order.pickedAt = new Date();
       } else if (status === 'delivered') {
         order.deliveredAt = new Date();
         // order.orderStatus already set to 'delivered' on line 3284
+      } else if (status === 'cancelled' || status === 'returned' || status === 'not_delivered') {
+        order.cancelledAt = new Date();
       }
 
       await order.save();

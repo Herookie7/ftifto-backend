@@ -1414,7 +1414,7 @@ const typeDefs = gql`
     orderPickedUp(_id: String!): Order
     muteRing(orderId: String!): Boolean
     assignOrder(id: String!): Order
-    updateOrderStatusRider(id: String!, status: String!): Order
+    updateOrderStatusRider(id: String!, status: String!, reason: String): Order
 
     # Other mutations
     forgotPassword(email: String!): ResultResponse
