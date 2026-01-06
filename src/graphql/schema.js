@@ -981,6 +981,7 @@ const typeDefs = gql`
   type Subscription {
     _id: ID
     userId: ID
+    user: User
     restaurantId: ID
     restaurant: Restaurant
     planType: String
@@ -1057,7 +1058,7 @@ const typeDefs = gql`
 
   type SubscriptionDelivery {
     _id: ID
-    subscriptionId: ID!
+    subscriptionId: Subscription!
     subscription: Subscription
     menuScheduleId: ID
     menuSchedule: MenuSchedule

@@ -2853,6 +2853,15 @@ const resolvers = {
         return await Restaurant.findById(parent.restaurantId).lean();
       }
       return null;
+    },
+    async user(parent) {
+      if (parent.user) {
+        return parent.user;
+      }
+      if (parent.userId) {
+        return await User.findById(parent.userId).lean();
+      }
+      return null;
     }
   },
 
