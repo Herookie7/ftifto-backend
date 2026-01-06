@@ -2862,10 +2862,29 @@ const resolvers = {
         return await User.findById(parent.userId).lean();
       }
       return null;
+    },
+    async restaurantId(parent) {
+      if (parent.restaurantId && typeof parent.restaurantId === 'object' && parent.restaurantId._id) {
+        return parent.restaurantId;
+      }
+      if (parent.restaurantId) {
+        return await Restaurant.findById(parent.restaurantId).lean();
+      }
+      return null;
     }
   },
 
   User: {
+    async location(parent) {
+      const address = (parent.addressBook && parent.addressBook.find(a => a.selected)) || (parent.addressBook && parent.addressBook[0]);
+      if (address) {
+        return {
+          coordinates: address.location?.coordinates || [0, 0],
+          deliveryAddress: address.deliveryAddress || ''
+        };
+      }
+      return null;
+    },
     customerProfile(parent) {
       if (parent.customerProfile) {
         return {

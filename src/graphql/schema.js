@@ -9,6 +9,11 @@ const typeDefs = gql`
     coordinates: JSON
   }
 
+  type UserLocation {
+    coordinates: JSON
+    deliveryAddress: String
+  }
+
   type OpeningTime {
     day: String
     times: [TimeSlot]
@@ -255,6 +260,8 @@ const typeDefs = gql`
     referralCode: String
     referredBy: User
     isFirstOrder: Boolean
+    location: UserLocation
+    addressBook: [Address]
     # Franchise fields
     franchise: Franchise
     role: String
@@ -982,7 +989,7 @@ const typeDefs = gql`
     _id: ID
     userId: ID
     user: User
-    restaurantId: ID
+    restaurantId: Restaurant
     restaurant: Restaurant
     planType: String
     planName: String
