@@ -1038,7 +1038,7 @@ const typeDefs = gql`
   type SubscriptionPreference {
     _id: ID
     subscriptionId: ID!
-    subscription: SubscriptionInfo
+    subscription: Subscription
     mealPreferences: [MealPreference]
     defaultProductPreferences: [ProductPreference]
     dietaryRestrictions: [String]
@@ -1058,7 +1058,7 @@ const typeDefs = gql`
   type SubscriptionDelivery {
     _id: ID
     subscriptionId: ID!
-    subscription: SubscriptionInfo
+    subscription: Subscription
     menuScheduleId: ID
     menuSchedule: MenuSchedule
     scheduledDate: Date!
