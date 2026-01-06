@@ -21,6 +21,11 @@ const couponSchema = new mongoose.Schema(
     enabled: {
       type: Boolean,
       default: true
+    },
+    minOrderAmount: {
+      type: Number,
+      default: 0,
+      min: 0
     }
   },
   { timestamps: true }

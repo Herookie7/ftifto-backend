@@ -116,6 +116,11 @@ const orderSchema = new mongoose.Schema(
     deliveryCharges: { type: Number, default: 0 },
     tipping: { type: Number, default: 0 },
     taxationAmount: { type: Number, default: 0 },
+    coupon: {
+      code: { type: String, trim: true },
+      discount: { type: Number, default: 0 }
+    },
+    riderFee: { type: Number, default: 0 },
     paymentMethod: { type: String, default: 'cash' },
     paymentStatus: {
       type: String,

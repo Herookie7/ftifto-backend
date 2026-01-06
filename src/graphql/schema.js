@@ -1007,6 +1007,8 @@ const typeDefs = gql`
     paymentMethod: String
     paymentStatus: String
     orderId: String
+    frequencyType: String
+    selectedSlots: [String]
     createdAt: Date
     updatedAt: Date
   }
@@ -1181,6 +1183,14 @@ const typeDefs = gql`
     subscription: Subscription
     message: String
     success: Boolean
+  }
+
+  type RazorpayOrderResponse {
+    id: String
+    amount: Float
+    currency: String
+    key: String
+    error: String
   }
 
   enum UserTypeEnum {
@@ -1563,16 +1573,18 @@ const typeDefs = gql`
     updateWithdrawReqStatus(id: ID!, status: String!): UpdateWithdrawRequestResponse
     
     # Wallet mutations
-    addWalletBalance(amount: Float!, paymentMethod: String!): WalletTransaction
+    createRazorpayOrder(amount: Float!): RazorpayOrderResponse
+    verifyRazorpayPayment(paymentId: String!, orderId: String!, signature: String!, amount: Float!): WalletTransaction
+    # Deprecated: addWalletBalance(amount: Float!, paymentMethod: String!): WalletTransaction
     convertRewardCoinsToWallet(coins: Int!): WalletTransaction
     
     # Subscription mutations
-    createSubscription(restaurantId: String!, planType: String!, paymentMethod: String!): SubscriptionResponse
+    createSubscription(restaurantId: String!, planType: String!, paymentMethod: String!, frequencyType: String, selectedSlots: [String]): SubscriptionResponse
     updateSubscription(subscriptionId: String!, restaurantId: String): SubscriptionResponse
     cancelSubscription(subscriptionId: String!): SubscriptionResponse
     
     # Menu schedule mutations
-    createMenuSchedule(restaurantId: String!, scheduleType: String!, dayOfWeek: String, date: String, menuItems: [MenuScheduleItemInput!]!): MenuSchedule
+    createMenuSchedule(restaurantId: String!, scheduleType: String!, dayOfWeek: String, date: String, mealType: String, menuItems: [MenuScheduleItemInput!]!): MenuSchedule
     updateMenuSchedule(scheduleId: String!, menuItems: [MenuScheduleItemInput!]!): MenuSchedule
     deleteMenuSchedule(scheduleId: String!): Boolean
     

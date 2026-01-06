@@ -10,6 +10,7 @@ const configurationSchema = new mongoose.Schema(
     deliveryRate: { type: Number, default: 0 },
     freeDeliveryAmount: { type: Number, default: 0 },
     costType: { type: String, default: 'fixed' },
+    riderGlobalFee: { type: Number, default: 30 },
 
     // Google Client IDs
     webClientID: { type: String, trim: true },

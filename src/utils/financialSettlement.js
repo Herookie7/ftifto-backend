@@ -50,7 +50,7 @@ async function processFinancialSettlement(order, restaurant, seller, rider) {
   // Calculate commission
   const commissionRate = Number(restaurant.commissionRate || 0);
   const commissionType = restaurant.commissionType || 'percentage';
-  
+
   let commissionAmount = 0;
   if (commissionType === 'percentage') {
     commissionAmount = baseAmount * (commissionRate / 100);
@@ -61,8 +61,10 @@ async function processFinancialSettlement(order, restaurant, seller, rider) {
   // Calculate seller earnings (base amount minus commission)
   const sellerEarnings = baseAmount - commissionAmount;
 
-  // Calculate rider earnings (delivery charges + tip)
-  const riderEarnings = deliveryCharges + tipping;
+  // Calculate rider earnings (Fixed Fee + Tip)
+  // Fallback to deliveryCharges if riderFee is missing (backward compatibility)
+  const riderFee = (typeof order.riderFee === 'number') ? order.riderFee : deliveryCharges;
+  const riderEarnings = riderFee + tipping;
 
   // Update seller wallet
   seller.sellerProfile.currentWalletAmount += sellerEarnings;

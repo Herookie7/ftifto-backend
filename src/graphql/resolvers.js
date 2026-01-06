@@ -4105,6 +4105,37 @@ const resolvers = {
 
       orderAmount += finalDeliveryCharges + (tipping || 0) + (taxationAmount || 0);
 
+      // Handle Coupon Logic
+      let couponDiscount = 0;
+      let couponObj = null;
+      if (couponCode) {
+        const coupon = await Coupon.findOne({ code: couponCode, enabled: true });
+        if (!coupon) {
+          throw new Error('Invalid or expired coupon code');
+        }
+
+        if (coupon.usageLimit > 0 && coupon.used >= coupon.usageLimit) {
+          throw new Error('Coupon usage limit reached');
+        }
+
+        // Validate Minimum Order Amount
+        if (coupon.minOrderAmount > 0 && orderAmount < coupon.minOrderAmount) {
+          throw new Error(`Coupon requires a minimum order amount of ${currencySymbol || ''}${coupon.minOrderAmount}`);
+        }
+
+        // Apply Discount
+        couponDiscount = (coupon.discount / 100) * orderAmount;
+        couponObj = { code: couponCode, discount: couponDiscount };
+        orderAmount = Math.max(0, orderAmount - couponDiscount);
+
+        // Increment usage
+        await Coupon.findByIdAndUpdate(coupon._id, { $inc: { used: 1 } });
+      }
+
+      // Fetch Rider Fee from Configuration
+      const configDoc = await Configuration.findOne({});
+      const riderFee = configDoc ? (configDoc.riderGlobalFee || 30) : 30;
+
       // Handle subscription order - decrement remaining tiffins
       if (activeSubscription && activeSubscription.remainingTiffins > 0) {
         await Subscription.findByIdAndUpdate(activeSubscription._id, {
@@ -4181,6 +4212,8 @@ const resolvers = {
         orderAmount,
         paidAmount: (isCashOrCOD || isRazorpay) ? 0 : orderAmount,
         deliveryCharges: deliveryCharges || 0,
+        riderFee: riderFee, // Store the fixed rider fee
+        coupon: couponObj,
         tipping: tipping || 0,
         taxationAmount: taxationAmount || 0,
         paymentMethod: paymentMethod || 'cash',
@@ -5229,7 +5262,101 @@ const resolvers = {
     },
 
     // Wallet mutations
+    async createRazorpayOrder(_, { amount }, context) {
+      if (!context.user) throw new Error('Authentication required');
+
+      const Razorpay = require('razorpay');
+      const Configuration = require('../models/Configuration'); // Ensure imported if not already available in scope, relying on top level require
+      const configuration = await Configuration.findOne({});
+
+      if (!configuration || !configuration.razorpayKeyId || !configuration.razorpayKeySecret) {
+        throw new Error('Razorpay configuration not found');
+      }
+
+      const razorpay = new Razorpay({
+        key_id: configuration.razorpayKeyId,
+        key_secret: configuration.razorpayKeySecret
+      });
+
+      const options = {
+        amount: Math.round(amount * 100), // amount in paisa
+        currency: configuration.currency || 'INR',
+        receipt: `wallet_topup_${Date.now()}`,
+        payment_capture: 1
+      };
+
+      try {
+        const order = await razorpay.orders.create(options);
+        return {
+          id: order.id,
+          amount: order.amount,
+          currency: order.currency,
+          key: configuration.razorpayKeyId
+        };
+      } catch (error) {
+        console.error('Razorpay Order creation error:', error);
+        throw new Error(error.message || 'Something went wrong');
+      }
+    },
+
+    async verifyRazorpayPayment(_, { paymentId, orderId, signature, amount }, context) {
+      if (!context.user) throw new Error('Authentication required');
+
+      const crypto = require('crypto');
+      const User = require('../models/User'); // Ensure imported
+      const WalletTransaction = require('../models/WalletTransaction'); // Ensure imported
+      const Configuration = require('../models/Configuration'); // Ensure imported
+      const configuration = await Configuration.findOne({});
+
+      if (!configuration || !configuration.razorpayKeySecret) {
+        throw new Error('Razorpay configuration not found');
+      }
+
+      const generated_signature = crypto
+        .createHmac('sha256', configuration.razorpayKeySecret)
+        .update(orderId + '|' + paymentId)
+        .digest('hex');
+
+      if (generated_signature !== signature) {
+        throw new Error('Payment verification failed');
+      }
+
+      // Payment is verified, update wallet
+      const user = await User.findById(context.user._id);
+      if (!user) throw new Error('User not found');
+
+      if (!user.customerProfile) {
+        user.customerProfile = { currentWalletAmount: 0, totalWalletAmount: 0, rewardCoins: 0, isFirstOrder: true };
+      }
+
+      const previousBalance = user.customerProfile.currentWalletAmount || 0;
+      const newBalance = previousBalance + amount;
+
+      user.customerProfile.currentWalletAmount = newBalance;
+      user.customerProfile.totalWalletAmount = (user.customerProfile.totalWalletAmount || 0) + amount;
+
+      await user.save();
+
+      // Create transaction record
+      const transaction = new WalletTransaction({
+        user: user._id,
+        amount: amount,
+        type: 'CREDIT',
+        paymentMethod: 'RAZORPAY',
+        paymentId: paymentId,
+        orderId: orderId,
+        status: 'SUCCESS',
+        description: 'Wallet top-up via Razorpay',
+        date: new Date()
+      });
+
+      await transaction.save();
+      return transaction;
+    },
+
+    // Deprecated: insecure direct update
     async addWalletBalance(_, { amount, paymentMethod }, context) {
+      throw new Error('This method is deprecated. Please use secure Razorpay payment flow.');
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -5336,7 +5463,7 @@ const resolvers = {
     },
 
     // Subscription mutations
-    async createSubscription(_, { restaurantId, planType, paymentMethod }, context) {
+    async createSubscription(_, { restaurantId, planType, paymentMethod, frequencyType, selectedSlots }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -5379,8 +5506,22 @@ const resolvers = {
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + plan.duration);
 
+      const slotsCount = selectedSlots && selectedSlots.length > 0 ? selectedSlots.length : 2;
+      const totalTiffins = plan.duration * slotsCount;
+
       // Calculate price (can be customized per restaurant)
-      const price = restaurant.subscriptionPrice?.[planType] || 0; // Default to 0, should be set by admin
+      // Assuming base price in DB is for standard 2-meal plan (Lunch+Dinner)
+      const basePrice = restaurant.subscriptionPrice?.[planType] || 0;
+      let price = basePrice;
+
+      // Scale price if slots != 2
+      // If 1 slot, 50% price? Or 60%? Assuming 50% for simplicity of logic, or base/2 * slots
+      if (basePrice > 0) {
+        price = (basePrice / 2) * slotsCount;
+      }
+
+      // Ensure price isn't 0 if logic fails but base was set? 
+      // If basePrice is 0, price remains 0.
 
       // Handle payment
       if (paymentMethod && paymentMethod.toLowerCase() === 'wallet') {
@@ -5424,10 +5565,12 @@ const resolvers = {
         planType: planType,
         planName: plan.planName,
         duration: plan.duration,
-        totalTiffins: plan.totalTiffins,
-        remainingTiffins: plan.totalTiffins,
+        totalTiffins: totalTiffins,
+        remainingTiffins: totalTiffins,
         remainingDays: plan.duration,
         price: price,
+        frequencyType: frequencyType || '2X',
+        selectedSlots: selectedSlots || ['LUNCH', 'DINNER'],
         startDate: startDate,
         endDate: endDate,
         status: 'ACTIVE',
@@ -5519,7 +5662,7 @@ const resolvers = {
     },
 
     // Menu schedule mutations
-    async createMenuSchedule(_, { restaurantId, scheduleType, dayOfWeek, date, menuItems }, context) {
+    async createMenuSchedule(_, { restaurantId, scheduleType, dayOfWeek, date, mealType, menuItems }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -5549,6 +5692,23 @@ const resolvers = {
         scheduleData.dayOfWeek = dayOfWeek;
       } else if (scheduleType === 'DAILY' && date) {
         scheduleData.date = new Date(date);
+      }
+
+      // Add mealType to scheduleData
+      scheduleData.mealType = mealType || 'TIFFIN';
+
+      // Check for existing schedule to prevent duplicates
+      const query = {
+        restaurantId: restaurant._id,
+        scheduleType: scheduleType,
+        mealType: scheduleData.mealType
+      };
+      if (scheduleType === 'WEEKLY') query.dayOfWeek = dayOfWeek;
+      if (scheduleType === 'DAILY') query.date = scheduleData.date;
+
+      const existing = await MenuSchedule.findOne(query);
+      if (existing) {
+        throw new Error('A menu schedule already exists for this slot');
       }
 
       const schedule = await MenuSchedule.create(scheduleData);

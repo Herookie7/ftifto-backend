@@ -28,8 +28,8 @@ const menuScheduleSchema = new mongoose.Schema(
     },
     mealType: {
       type: String,
-      enum: ['TIFFIN'],
-      default: 'TIFFIN'
+      enum: ['TIFFIN', 'BREAKFAST', 'LUNCH', 'DINNER'],
+      default: 'LUNCH'
     },
     menuItems: [{
       productId: {

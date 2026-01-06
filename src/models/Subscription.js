@@ -71,6 +71,15 @@ const subscriptionSchema = new mongoose.Schema(
       enum: ['CASH', 'CARD', 'WALLET'],
       required: true
     },
+    frequencyType: {
+      type: String,
+      enum: ['1X', '2X', '3X'],
+      default: '1X'
+    },
+    selectedSlots: [{
+      type: String,
+      enum: ['BREAKFAST', 'LUNCH', 'DINNER']
+    }],
     paymentStatus: {
       type: String,
       enum: ['PENDING', 'PAID', 'REFUNDED'],
@@ -91,15 +100,15 @@ subscriptionSchema.index({ endDate: 1, status: 1 });
 subscriptionSchema.index({ userId: 1, restaurantId: 1, status: 1 });
 
 // Method to check if subscription is active
-subscriptionSchema.methods.isActive = function() {
-  return this.status === 'ACTIVE' && 
-         this.endDate > new Date() && 
-         this.remainingTiffins > 0 &&
-         this.remainingDays > 0;
+subscriptionSchema.methods.isActive = function () {
+  return this.status === 'ACTIVE' &&
+    this.endDate > new Date() &&
+    this.remainingTiffins > 0 &&
+    this.remainingDays > 0;
 };
 
 // Method to use a tiffin (decrement remaining)
-subscriptionSchema.methods.useTiffin = function() {
+subscriptionSchema.methods.useTiffin = function () {
   if (this.remainingTiffins > 0) {
     this.remainingTiffins -= 1;
   }
