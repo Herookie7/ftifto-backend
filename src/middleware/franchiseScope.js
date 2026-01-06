@@ -132,9 +132,56 @@ const validateFranchiseAccess = (context, resource, action = 'access') => {
     return true;
 };
 
+/**
+ * Validates that two entities belong to the same franchise
+ * Throws error if franchise-admin tries to use cross-franchise resources
+ * @param {Object} context - GraphQL context
+ * @param {Object} entity1 - First entity with franchise field
+ * @param {Object} entity2 - Second entity with franchise field
+ * @param {String} errorMessage - Custom error message
+ * @throws {Error} If franchise mismatch for franchise-admin
+ */
+const validateFranchiseMatch = (context, entity1, entity2, errorMessage = 'Cross-franchise operation not allowed') => {
+    if (!context || !context.user) {
+        throw new Error('Authentication required');
+    }
+
+    const { user } = context;
+
+    // Super admins can do anything
+    if (user.role === 'super-admin') {
+        return true;
+    }
+
+    // Franchise admins can only work within their franchise
+    if (user.role === 'franchise-admin') {
+        if (!user.franchise) {
+            throw new Error('User is not assigned to a franchise');
+        }
+
+        const franchise1 = entity1?.franchise?.toString() || entity1?.franchise;
+        const franchise2 = entity2?.franchise?.toString() || entity2?.franchise;
+
+        if (franchise1 && franchise2 && franchise1 !== franchise2) {
+            throw new Error(errorMessage);
+        }
+
+        // Also validate against user's own franchise
+        if (franchise1 && franchise1 !== user.franchise.toString()) {
+            throw new Error(errorMessage);
+        }
+        if (franchise2 && franchise2 !== user.franchise.toString()) {
+            throw new Error(errorMessage);
+        }
+    }
+
+    return true;
+};
+
 module.exports = {
     addFranchiseScope,
     canAccessFranchise,
     getFranchiseForCreation,
-    validateFranchiseAccess
+    validateFranchiseAccess,
+    validateFranchiseMatch
 };

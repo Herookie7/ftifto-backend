@@ -22,7 +22,7 @@ const SubscriptionPreference = require('../models/SubscriptionPreference');
 const SubscriptionDelivery = require('../models/SubscriptionDelivery');
 const { signToken } = require('../utils/token');
 const logger = require('../logger');
-const { addFranchiseScope, getFranchiseForCreation } = require('../middleware/franchiseScope');
+const { addFranchiseScope, getFranchiseForCreation, validateFranchiseMatch } = require('../middleware/franchiseScope');
 
 // Helper function to generate unique referral code
 const generateReferralCode = async () => {
@@ -692,8 +692,9 @@ const resolvers = {
     },
 
     // Users (for testing)
-    async users() {
-      return await User.find().lean();
+    async users(_, __, context) {
+      const franchiseScope = addFranchiseScope(context);
+      return await User.find({ ...franchiseScope }).lean();
     },
 
     async user(_, { id }) {
@@ -1539,7 +1540,8 @@ const resolvers = {
       return [];
     },
 
-    async getDashboardUsers() {
+    async getDashboardUsers(_, __, context) {
+      const franchiseScope = addFranchiseScope(context);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const weekAgo = new Date(today);
@@ -1548,18 +1550,18 @@ const resolvers = {
       monthAgo.setMonth(monthAgo.getMonth() - 1);
 
       // Count by role (scalar values)
-      const usersCountScalar = await User.countDocuments({ role: 'customer' });
-      const vendorsCountScalar = await User.countDocuments({ role: 'seller' });
-      const restaurantsCountScalar = await Restaurant.countDocuments({ isActive: true });
-      const ridersCountScalar = await User.countDocuments({ role: 'rider' });
+      const usersCountScalar = await User.countDocuments({ role: 'customer', ...franchiseScope });
+      const vendorsCountScalar = await User.countDocuments({ role: 'seller', ...franchiseScope });
+      const restaurantsCountScalar = await Restaurant.countDocuments({ isActive: true, ...franchiseScope });
+      const ridersCountScalar = await User.countDocuments({ role: 'rider', ...franchiseScope });
 
       // Legacy fields for backward compatibility
-      const total = await User.countDocuments();
-      const active = await User.countDocuments({ isActive: true });
-      const inactive = await User.countDocuments({ isActive: false });
-      const newToday = await User.countDocuments({ createdAt: { $gte: today } });
-      const newThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo } });
-      const newThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo } });
+      const total = await User.countDocuments({ ...franchiseScope });
+      const active = await User.countDocuments({ isActive: true, ...franchiseScope });
+      const inactive = await User.countDocuments({ isActive: false, ...franchiseScope });
+      const newToday = await User.countDocuments({ createdAt: { $gte: today }, ...franchiseScope });
+      const newThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo }, ...franchiseScope });
+      const newThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo }, ...franchiseScope });
 
       // Wrap scalar counts in single-element arrays to satisfy the schema
       // (DashboardUsersResponse.*Count fields are defined as [Int])
@@ -1577,42 +1579,77 @@ const resolvers = {
       };
     },
 
-    async getDashboardUsersByYear(_, { year }) {
+    async getDashboardUsersByYear(_, { year }, context) {
+      const franchiseScope = addFranchiseScope(context);
       const targetYear = year || new Date().getFullYear();
-      const usersCount = [];
-      const vendorsCount = [];
-      const restaurantsCount = [];
-      const ridersCount = [];
+      const months = Array.from({ length: 12 }, (_, i) => i);
 
-      // Aggregate by month for the year
-      for (let month = 0; month < 12; month++) {
-        const monthStart = new Date(targetYear, month, 1);
-        const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59);
+      // Initialize arrays with 0
+      const usersCount = new Array(12).fill(0);
+      const vendorsCount = new Array(12).fill(0);
+      const restaurantsCount = new Array(12).fill(0);
+      const ridersCount = new Array(12).fill(0);
 
-        usersCount.push(await User.countDocuments({
-          role: 'customer',
-          createdAt: { $gte: monthStart, $lte: monthEnd }
-        }));
-        vendorsCount.push(await User.countDocuments({
-          role: 'seller',
-          createdAt: { $gte: monthStart, $lte: monthEnd }
-        }));
-        restaurantsCount.push(await Restaurant.countDocuments({
-          isActive: true,
-          createdAt: { $gte: monthStart, $lte: monthEnd }
-        }));
-        ridersCount.push(await User.countDocuments({
-          role: 'rider',
-          createdAt: { $gte: monthStart, $lte: monthEnd }
-        }));
-      }
+      // Perform aggregation to group by month
+      const userAgg = await User.aggregate([
+        {
+          $match: {
+            createdAt: {
+              $gte: new Date(targetYear, 0, 1),
+              $lte: new Date(targetYear, 11, 31, 23, 59, 59)
+            },
+            ...franchiseScope
+          }
+        },
+        {
+          $group: {
+            _id: { month: { $month: '$createdAt' }, role: '$role' },
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      const restAgg = await Restaurant.aggregate([
+        {
+          $match: {
+            createdAt: {
+              $gte: new Date(targetYear, 0, 1),
+              $lte: new Date(targetYear, 11, 31, 23, 59, 59)
+            },
+            ...franchiseScope
+          }
+        },
+        {
+          $group: {
+            _id: { month: { $month: '$createdAt' } },
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      // Map aggregation results to arrays
+      userAgg.forEach(({ _id, count }) => {
+        const monthIndex = _id.month - 1;
+        if (monthIndex >= 0 && monthIndex < 12) {
+          if (_id.role === 'customer') usersCount[monthIndex] += count;
+          else if (_id.role === 'seller') vendorsCount[monthIndex] += count;
+          else if (_id.role === 'rider') ridersCount[monthIndex] += count;
+        }
+      });
+
+      restAgg.forEach(({ _id, count }) => {
+        const monthIndex = _id.month - 1;
+        if (monthIndex >= 0 && monthIndex < 12) {
+          restaurantsCount[monthIndex] += count;
+        }
+      });
 
       // Legacy fields for backward compatibility
       const startDate = new Date(targetYear, 0, 1);
       const endDate = new Date(targetYear, 11, 31, 23, 59, 59);
-      const total = await User.countDocuments({ createdAt: { $gte: startDate, $lte: endDate } });
-      const active = await User.countDocuments({ isActive: true, createdAt: { $gte: startDate, $lte: endDate } });
-      const inactive = await User.countDocuments({ isActive: false, createdAt: { $gte: startDate, $lte: endDate } });
+      const total = await User.countDocuments({ createdAt: { $gte: startDate, $lte: endDate }, ...franchiseScope });
+      const active = await User.countDocuments({ isActive: true, createdAt: { $gte: startDate, $lte: endDate }, ...franchiseScope });
+      const inactive = await User.countDocuments({ isActive: false, createdAt: { $gte: startDate, $lte: endDate }, ...franchiseScope });
       const newToday = 0;
       const newThisWeek = 0;
       const newThisMonth = 0;
@@ -1631,8 +1668,9 @@ const resolvers = {
       };
     },
 
-    async getDashboardOrdersByType(_, { dateFilter }) {
-      const query = { isActive: true };
+    async getDashboardOrdersByType(_, { dateFilter }, context) {
+      const franchiseScope = addFranchiseScope(context);
+      const query = { isActive: true, ...franchiseScope };
       if (dateFilter?.startDate || dateFilter?.endDate || dateFilter?.starting_date || dateFilter?.ending_date) {
         query.createdAt = {};
         const startDate = dateFilter.startDate || dateFilter.starting_date;
@@ -1653,8 +1691,9 @@ const resolvers = {
       ];
     },
 
-    async getDashboardSalesByType(_, { dateFilter }) {
-      const query = { isActive: true, paymentStatus: 'paid' };
+    async getDashboardSalesByType(_, { dateFilter }, context) {
+      const franchiseScope = addFranchiseScope(context);
+      const query = { isActive: true, paymentStatus: 'paid', ...franchiseScope };
       if (dateFilter?.startDate || dateFilter?.endDate || dateFilter?.starting_date || dateFilter?.ending_date) {
         query.createdAt = {};
         const startDate = dateFilter.startDate || dateFilter.starting_date;
@@ -1848,8 +1887,9 @@ const resolvers = {
       };
     },
 
-    async vendors(_, { filters }) {
-      const query = { role: 'seller' };
+    async vendors(_, { filters }, context) {
+      const franchiseScope = addFranchiseScope(context);
+      const query = { role: 'seller', ...franchiseScope };
       if (filters?.search) {
         query.$or = [
           { name: { $regex: filters.search, $options: 'i' } },
@@ -1866,8 +1906,9 @@ const resolvers = {
       return vendors;
     },
 
-    async riders(_, { filters }) {
-      const query = { role: 'rider' };
+    async riders(_, { filters }, context) {
+      const franchiseScope = addFranchiseScope(context);
+      const query = { role: 'rider', ...franchiseScope };
       if (filters?.search) {
         query.$or = [
           { name: { $regex: filters.search, $options: 'i' } },
@@ -1882,20 +1923,23 @@ const resolvers = {
       return await User.find(query).lean();
     },
 
-    async availableRiders(_, { zoneId }) {
-      const query = { role: 'rider', isActive: true, 'riderProfile.available': true };
+    async availableRiders(_, { zoneId }, context) {
+      const franchiseScope = addFranchiseScope(context);
+      const query = { role: 'rider', isActive: true, 'riderProfile.available': true, ...franchiseScope };
       if (zoneId) {
         query.zone = zoneId;
       }
       return await User.find(query).lean();
     },
 
-    async ridersByZone(_, { zoneId }) {
-      return await User.find({ role: 'rider', zone: zoneId }).lean();
+    async ridersByZone(_, { zoneId }, context) {
+      const franchiseScope = addFranchiseScope(context);
+      return await User.find({ role: 'rider', zone: zoneId, ...franchiseScope }).lean();
     },
 
-    async staffs(_, { filters }) {
-      const query = { role: { $in: ['admin', 'staff'] } };
+    async staffs(_, { filters }, context) {
+      const franchiseScope = addFranchiseScope(context);
+      const query = { role: { $in: ['admin', 'staff'] }, ...franchiseScope };
       if (filters?.search) {
         query.$or = [
           { name: { $regex: filters.search, $options: 'i' } },
