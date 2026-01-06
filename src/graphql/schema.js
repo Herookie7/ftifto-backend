@@ -1443,6 +1443,7 @@ const typeDefs = gql`
     # Rider App Queries
     getPendingDeliveriesForZone: [SubscriptionDelivery]
     getRiderAssignments: [SubscriptionDelivery]
+    getActiveRiders: [User]
     
     # Holiday Request Queries
     getHolidayRequests(status: String): [HolidayRequest]

@@ -203,6 +203,38 @@ const resolvers = {
         .populate('orderId')
         .sort({ createdAt: -1 });
     },
+    getActiveRiders: async (_, __, context) => {
+      // Authorization: Admin only
+      const user = context.user;
+      // if (!user || user.role !== 'admin') throw new Error('Not authorized'); 
+
+      const today = new Date();
+      // Riders on holiday today
+      const holidayRequests = await HolidayRequest.find({
+        status: 'APPROVED',
+        startDate: { $lte: today },
+        endDate: { $gte: today }
+      }).select('riderId');
+
+      const ridersOnHoliday = holidayRequests.map(h => h.riderId.toString());
+
+      // Fetch active riders excluding those on holiday
+      return await User.find({
+        role: 'rider',
+        _id: { $nin: ridersOnHoliday },
+        'riderProfile.location.coordinates': { $exists: true, $ne: [0, 0] }
+      });
+    },
+
+    getHolidayRequests: async (_, { status }, context) => {
+      const query = {};
+      if (status) query.status = status;
+      // If rider, only show own requests? 
+      // if (context.user.role === 'rider') query.riderId = context.user._id;
+
+      return await HolidayRequest.find(query).populate('riderId').populate('approvedBy').sort({ createdAt: -1 });
+    },
+
     // Nearby restaurants with full details
     async nearByRestaurants(_, { latitude, longitude, shopType }) {
       const cache = require('../services/cache.service');
@@ -6654,44 +6686,7 @@ const resolvers = {
       return await User.findById(context.user._id);
     },
 
-    getActiveRiders: async (_, __, context) => {
-      // Authorization: Admin only
-      const user = context.user;
-      // if (!user || user.role !== 'admin') throw new Error('Not authorized'); 
 
-      const today = new Date();
-      // Riders on holiday today
-      const holidayRequests = await HolidayRequest.find({
-        status: 'APPROVED',
-        startDate: { $lte: today },
-        endDate: { $gte: today }
-      }).select('riderId');
-
-      const ridersOnHoliday = holidayRequests.map(h => h.riderId.toString());
-
-      // Fetch active riders excluding those on holiday
-      return await User.find({
-        role: 'rider',
-        _id: { $nin: ridersOnHoliday },
-        'riderProfile.location.coordinates': { $exists: true, $ne: [0, 0] }
-      });
-    },
-
-    getHolidayRequests: async (_, { status }, context) => {
-      if (!context.user || context.user.role !== 'admin') {
-        throw new Error('Authentication required (Admin only)');
-      }
-
-      const filter = {};
-      if (status) {
-        filter.status = status;
-      }
-
-      return await HolidayRequest.find(filter)
-        .populate('riderId') // Populate rider details
-        .populate('approvedBy')
-        .sort({ createdAt: -1 });
-    },
 
     assignSubscriptionDelivery: async (_, { deliveryId }, context) => {
       if (!context.user || context.user.role !== 'rider') {
