@@ -54,6 +54,8 @@ const typeDefs = gql`
     title: String
     description: String
     image: String
+    price: Float
+    discountedPrice: Float
     subCategory: String
     isOutOfStock: Boolean
     variations: [Variation]
