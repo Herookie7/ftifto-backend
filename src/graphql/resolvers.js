@@ -5267,55 +5267,7 @@ const resolvers = {
     },
 
     // Deprecated: insecure direct update
-    async addWalletBalance(_, { amount, paymentMethod }, context) {
-      throw new Error('This method is deprecated. Please use secure Razorpay payment flow.');
-      if (!context.user) {
-        throw new Error('Authentication required');
-      }
 
-      if (!amount || amount <= 0) {
-        throw new Error('Amount must be greater than 0');
-      }
-
-      const user = await User.findById(context.user._id);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      // Initialize customerProfile if not exists
-      if (!user.customerProfile) {
-        user.customerProfile = {
-          currentWalletAmount: 0,
-          totalWalletAmount: 0,
-          rewardCoins: 0,
-          isFirstOrder: true
-        };
-      }
-
-      const previousBalance = user.customerProfile.currentWalletAmount || 0;
-      const newBalance = previousBalance + amount;
-
-      // Update wallet
-      user.customerProfile.currentWalletAmount = newBalance;
-      user.customerProfile.totalWalletAmount = (user.customerProfile.totalWalletAmount || 0) + amount;
-
-      // Create transaction record
-      const transaction = await WalletTransaction.create({
-        userId: user._id,
-        userType: 'CUSTOMER',
-        type: 'CREDIT',
-        amount: amount,
-        balanceAfter: newBalance,
-        description: `Wallet top-up via ${paymentMethod}`,
-        transactionType: 'TOP_UP',
-        status: 'COMPLETED',
-        referenceId: `TOPUP_${Date.now()}_${user._id}`
-      });
-
-      await user.save();
-
-      return transaction.toObject();
-    },
 
     async convertRewardCoinsToWallet(_, { coins }, context) {
       if (!context.user) {
