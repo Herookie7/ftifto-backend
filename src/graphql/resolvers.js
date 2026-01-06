@@ -146,6 +146,63 @@ const resolvers = {
       // Filter out deliveries where subscriptionId is null (because of restaurant mismatch)
       return deliveries.filter(d => d.subscriptionId !== null);
     },
+
+    getPendingDeliveriesForZone: async (_, __, context) => {
+      if (!context.user || context.user.role !== 'rider') {
+        throw new Error('Authentication required (Rider only)');
+      }
+
+      // Find Rider's zone
+      const rider = await User.findById(context.user._id);
+      if (!rider || !rider.zone) {
+        console.log('Rider zone not found', rider);
+        // If no zone assigned, return empty or all? Better empty.
+        return [];
+      }
+
+      // Find deliveries with status 'PREPARED'
+      // We need to filter by Restaurant Zone matching Rider Zone.
+      // SubscriptionDelivery -> Subscription -> Restaurant -> Zone
+
+      const deliveries = await SubscriptionDelivery.find({ status: 'PREPARED' })
+        .populate({
+          path: 'subscriptionId',
+          populate: {
+            path: 'restaurantId',
+            match: { zone: rider.zone }
+          }
+        })
+        .populate({
+          path: 'subscriptionId',
+          populate: { path: 'userId' } // Need customer details
+        })
+        .populate('orderId')
+        .exec();
+
+      // Filter out those where restaurantId is null (mismatch zone) or subscriptionId null
+      const filtered = deliveries.filter(d => d.subscriptionId && d.subscriptionId.restaurantId);
+
+      return filtered;
+    },
+
+    getRiderAssignments: async (_, __, context) => {
+      if (!context.user || context.user.role !== 'rider') throw new Error('Unauthenticated');
+
+      return await SubscriptionDelivery.find({
+        rider: context.user._id,
+        status: { $in: ['ASSIGNED', 'DISPATCHED', 'OUT_FOR_DELIVERY'] }
+      })
+        .populate({
+          path: 'subscriptionId',
+          populate: { path: 'restaurantId' }
+        })
+        .populate({
+          path: 'subscriptionId',
+          populate: { path: 'userId' }
+        })
+        .populate('orderId')
+        .sort({ createdAt: -1 });
+    },
     // Nearby restaurants with full details
     async nearByRestaurants(_, { latitude, longitude, shopType }) {
       const cache = require('../services/cache.service');
@@ -6564,62 +6621,7 @@ const resolvers = {
       return delivery;
     },
 
-    getPendingDeliveriesForZone: async (_, __, context) => {
-      if (!context.user || context.user.role !== 'rider') {
-        throw new Error('Authentication required (Rider only)');
-      }
 
-      // Find Rider's zone
-      const rider = await User.findById(context.user._id);
-      if (!rider || !rider.zone) {
-        console.log('Rider zone not found', rider);
-        // If no zone assigned, return empty or all? Better empty.
-        return [];
-      }
-
-      // Find deliveries with status 'PREPARED'
-      // We need to filter by Restaurant Zone matching Rider Zone.
-      // SubscriptionDelivery -> Subscription -> Restaurant -> Zone
-
-      const deliveries = await SubscriptionDelivery.find({ status: 'PREPARED' })
-        .populate({
-          path: 'subscriptionId',
-          populate: {
-            path: 'restaurantId',
-            match: { zone: rider.zone }
-          }
-        })
-        .populate({
-          path: 'subscriptionId',
-          populate: { path: 'userId' } // Need customer details
-        })
-        .populate('orderId')
-        .exec();
-
-      // Filter out those where restaurantId is null (mismatch zone) or subscriptionId null
-      const filtered = deliveries.filter(d => d.subscriptionId && d.subscriptionId.restaurantId);
-
-      return filtered;
-    },
-
-    getRiderAssignments: async (_, __, context) => {
-      if (!context.user || context.user.role !== 'rider') throw new Error('Unauthenticated');
-
-      return await SubscriptionDelivery.find({
-        rider: context.user._id,
-        status: { $in: ['ASSIGNED', 'DISPATCHED', 'OUT_FOR_DELIVERY'] }
-      })
-        .populate({
-          path: 'subscriptionId',
-          populate: { path: 'restaurantId' }
-        })
-        .populate({
-          path: 'subscriptionId',
-          populate: { path: 'userId' }
-        })
-        .populate('orderId')
-        .sort({ createdAt: -1 });
-    },
 
     toggleRiderAvailability: async (_, __, context) => {
       if (!context.user || context.user.role !== 'rider') {
