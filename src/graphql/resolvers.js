@@ -113,6 +113,39 @@ const resolvers = {
     }
   },
   Query: {
+    getDailyDeliveries: async (_, { restaurantId, date, mealType }, context) => {
+      // if (!context.user || !context.user.id) throw new Error('Unauthenticated');
+      // Check restaurant ownership logic if needed
+
+      const queryDate = date ? new Date(date) : new Date();
+      const startOfDay = new Date(queryDate.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(queryDate.setHours(23, 59, 59, 999));
+
+      const filter = {
+        scheduledDate: {
+          $gte: startOfDay,
+          $lte: endOfDay
+        }
+      };
+
+      if (mealType) {
+        filter.mealType = mealType;
+      }
+
+      // We need to filter based on subscriptions that belong to this restaurant
+      // But SubscriptionDelivery refs Subscription. Use populate.
+
+      const deliveries = await SubscriptionDelivery.find(filter)
+        .populate({
+          path: 'subscriptionId',
+          match: { restaurantId: restaurantId }
+        })
+        .populate('orderId')
+        .exec();
+
+      // Filter out deliveries where subscriptionId is null (because of restaurant mismatch)
+      return deliveries.filter(d => d.subscriptionId !== null);
+    },
     // Nearby restaurants with full details
     async nearByRestaurants(_, { latitude, longitude, shopType }) {
       const cache = require('../services/cache.service');
@@ -6418,39 +6451,7 @@ const resolvers = {
       }
     },
 
-    getDailyDeliveries: async (_, { restaurantId, date, mealType }, context) => {
-      // if (!context.user || !context.user.id) throw new Error('Unauthenticated');
-      // Check restaurant ownership logic if needed
 
-      const queryDate = date ? new Date(date) : new Date();
-      const startOfDay = new Date(queryDate.setHours(0, 0, 0, 0));
-      const endOfDay = new Date(queryDate.setHours(23, 59, 59, 999));
-
-      const filter = {
-        scheduledDate: {
-          $gte: startOfDay,
-          $lte: endOfDay
-        }
-      };
-
-      if (mealType) {
-        filter.mealType = mealType;
-      }
-
-      // We need to filter based on subscriptions that belong to this restaurant
-      // But SubscriptionDelivery refs Subscription. Use populate.
-
-      const deliveries = await SubscriptionDelivery.find(filter)
-        .populate({
-          path: 'subscriptionId',
-          match: { restaurantId: restaurantId }
-        })
-        .populate('orderId')
-        .exec();
-
-      // Filter out deliveries where subscriptionId is null (because of restaurant mismatch)
-      return deliveries.filter(d => d.subscriptionId !== null);
-    },
     updateDeliveryStatus: async (_, { deliveryId, status, reason }, context) => { // Added reason for Exceptions
       if (!context.user) throw new Error('Unauthenticated');
 
