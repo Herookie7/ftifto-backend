@@ -1519,7 +1519,7 @@ const typeDefs = gql`
 
     # Order mutations
     placeOrder(restaurant: String!, orderInput: [OrderInput!]!, paymentMethod: String!, couponCode: String, tipping: Float!, taxationAmount: Float!, address: AddressInput!, orderDate: String!, isPickedUp: Boolean!, deliveryCharges: Float!, instructions: String): Order
-    verifyRazorpayPayment(orderId: String!, razorpayOrderId: String!, razorpayPaymentId: String!, razorpaySignature: String!): Order
+
     abortOrder(id: String!): Order
     acceptOrder(_id: String!, time: String): Order
     cancelOrder(_id: String!, reason: String!): Order
