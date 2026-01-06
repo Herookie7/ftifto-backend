@@ -147,6 +147,7 @@ const typeDefs = gql`
     isPinned: Boolean
     pinExpiry: Date
     pinPaymentId: String
+    franchise: Franchise
   }
 
   type RestaurantPreview {
@@ -254,6 +255,9 @@ const typeDefs = gql`
     referralCode: String
     referredBy: User
     isFirstOrder: Boolean
+    # Franchise fields
+    franchise: Franchise
+    role: String
   }
 
   type CustomerProfile {
@@ -325,6 +329,7 @@ const typeDefs = gql`
     isRinged: Boolean
     isRiderRinged: Boolean
     zone: Zone
+    franchise: Franchise
   }
 
   type Configuration {
@@ -332,6 +337,7 @@ const typeDefs = gql`
     currency: String
     currencySymbol: String
     deliveryRate: Float
+    freeDeliveryAmount: Float
     androidClientID: String
     iOSClientID: String
     googleApiKey: String
@@ -393,6 +399,7 @@ const typeDefs = gql`
     # App configuration
     isPaidVersion: Boolean
     vapidKey: String
+    supportPhone: String
   }
 
   type Cuisine {
@@ -949,6 +956,7 @@ const typeDefs = gql`
     status: String
     createdAt: Date
     updatedAt: Date
+    franchise: Franchise
   }
 
   type WalletBalance {
@@ -960,6 +968,14 @@ const typeDefs = gql`
   type WalletTransactionResponse {
     data: [WalletTransaction]
     pagination: PaginationInfo
+  }
+
+  type TransactionSummary {
+    totalReferralPayouts: Float
+    totalCoinConversions: Float
+    totalWalletTopUps: Float
+    referralCount: Int
+    coinConversionCount: Int
   }
 
   type Subscription {
@@ -991,6 +1007,7 @@ const typeDefs = gql`
     scheduleType: String
     dayOfWeek: String
     date: Date
+    mealType: String
     menuItems: [MenuScheduleItem]
     isActive: Boolean
     createdAt: Date
@@ -1002,6 +1019,62 @@ const typeDefs = gql`
     product: Product
     isAvailable: Boolean
     priceOverride: Float
+  }
+
+  # Subscription-Menu Linking Types
+  type MealPreference {
+    dayOfWeek: String!
+    mealType: String
+    isEnabled: Boolean!
+    deliveryTime: String
+  }
+
+  type ProductPreference {
+    productId: ID!
+    product: Product
+    isPreferred: Boolean!
+  }
+
+  type SubscriptionPreference {
+    _id: ID
+    subscriptionId: ID!
+    subscription: SubscriptionInfo
+    mealPreferences: [MealPreference]
+    defaultProductPreferences: [ProductPreference]
+    dietaryRestrictions: [String]
+    specialInstructions: String
+    createdAt: Date
+    updatedAt: Date
+  }
+
+  type DeliveryMenuItem {
+    productId: ID!
+    product: Product
+    title: String!
+    quantity: Int!
+    price: Float!
+  }
+
+  type SubscriptionDelivery {
+    _id: ID
+    subscriptionId: ID!
+    subscription: SubscriptionInfo
+    menuScheduleId: ID
+    menuSchedule: MenuSchedule
+    scheduledDate: Date!
+    dayOfWeek: String!
+    mealType: String
+    menuItems: [DeliveryMenuItem]
+    status: String!
+    deliveryTime: String
+    orderId: ID
+    order: Order
+    skipReason: String
+    deliveredAt: Date
+    notes: String
+    canSkip: Boolean
+    createdAt: Date
+    updatedAt: Date
   }
 
   type HolidayRequest {
@@ -1193,6 +1266,7 @@ const typeDefs = gql`
 
   input DeliveryCostConfigurationInput {
     deliveryRate: Float
+    freeDeliveryAmount: Float
     costType: String
   }
 
@@ -1227,6 +1301,7 @@ const typeDefs = gql`
     termsAndConditions: String
     privacyPolicy: String
     testOtp: String
+    supportPhone: String
   }
 
   input VerificationConfigurationInput {
@@ -1347,6 +1422,7 @@ const typeDefs = gql`
     # Wallet queries
     getWalletBalance: WalletBalance
     getWalletTransactions(pagination: PaginationInput): WalletTransactionResponse
+    getTransactionSummary: TransactionSummary
     
     # Subscription queries
     getUserSubscription: Subscription
@@ -1355,6 +1431,21 @@ const typeDefs = gql`
     # Menu schedule queries (Seller app)
     getMenuSchedules(restaurantId: ID!, scheduleType: String): [MenuSchedule]
     getMenuSchedule(scheduleId: ID!): MenuSchedule
+    
+    # Subscription-Menu Linking queries
+    getSubscriptionPreferences(subscriptionId: ID!): SubscriptionPreference
+
+    getSubscriptionDeliveries(subscriptionId: ID!, status: String, startDate: Date, endDate: Date): [SubscriptionDelivery]
+    getWeeklyMenuForSubscription(subscriptionId: ID!, weekStart: Date!): [MenuSchedule]
+    getTodaysDeliveries(restaurantId: ID!): [SubscriptionDelivery]
+    getDailyDeliveries(restaurantId: ID!, date: Date, mealType: String): [SubscriptionDelivery]
+    
+    # Rider App Queries
+    getPendingDeliveriesForZone: [SubscriptionDelivery]
+    getRiderAssignments: [SubscriptionDelivery]
+    
+    # Holiday Request Queries
+    getHolidayRequests(status: String): [HolidayRequest]
   }
 
   type Mutation {
@@ -1440,6 +1531,7 @@ const typeDefs = gql`
     updateRiderVehicleDetails(id: String!, vehicleDetails: VehicleDetailsInput): User
     updateRestaurantBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): UpdateRestaurantResponse
     updateRestaurantInfo(id: String!, restaurantInput: RestaurantInfoInput!): UpdateRestaurantResponse
+    toggleRestaurantPin(restaurantId: String!, isPinned: Boolean!, pinDurationDays: Int): Restaurant
     createCategory(restaurantId: ID!, title: String!, description: String, image: String, order: Int): Category
     updateCategory(id: ID!, title: String, description: String, image: String, order: Int, isActive: Boolean): Category
     deleteCategory(id: ID!): Boolean
@@ -1481,6 +1573,24 @@ const typeDefs = gql`
     createFranchise(franchiseInput: FranchiseInput!): Franchise
     updateFranchise(franchiseId: String!, franchiseInput: FranchiseInput!): Franchise
     deleteFranchise(franchiseId: String!): Boolean
+    
+    # Notification mutations
+    sendNotificationUser(notificationTitle: String, notificationBody: String!): Boolean
+    
+    # Subscription-Menu Linking mutations
+    setSubscriptionPreferences(subscriptionId: ID!, preferences: SubscriptionPreferenceInput!): SubscriptionPreference
+    updateMealPreference(subscriptionId: ID!, dayOfWeek: String!, mealType: String!, isEnabled: Boolean!, deliveryTime: String): SubscriptionPreference
+
+    skipSubscriptionDelivery(deliveryId: ID!, reason: String): SubscriptionDelivery
+    assignMenuToDelivery(deliveryId: ID!, menuItems: [DeliveryMenuItemInput!]!): SubscriptionDelivery
+    generateWeeklyDeliveries(subscriptionId: ID!, weekStart: Date!): [SubscriptionDelivery]
+    updateDeliveryStatus(deliveryId: ID!, status: String!, reason: String): SubscriptionDelivery
+
+    # Rider App Mutations
+    toggleRiderAvailability: User
+    assignSubscriptionDelivery(deliveryId: ID!): SubscriptionDelivery
+
+
   }
 
   type Subscription {
@@ -1623,6 +1733,7 @@ const typeDefs = gql`
     salesTax: Float
     tax: Float
     cuisines: [String]
+    isPinned: Boolean
   }
 
   input RestaurantInfoInput {
@@ -1637,6 +1748,7 @@ const typeDefs = gql`
     minimumOrder: Float
     deliveryCharges: Float
     location: [Float]
+    isPinned: Boolean
   }
 
   input CuisineInput {
@@ -1739,6 +1851,33 @@ const typeDefs = gql`
     name: String
     email: String
     phone: String
+  }
+
+  # Subscription-Menu Linking Input Types
+  input MealPreferenceInput {
+    dayOfWeek: String!
+    mealType: String
+    isEnabled: Boolean!
+    deliveryTime: String
+  }
+
+  input ProductPreferenceInput {
+    productId: ID!
+    isPreferred: Boolean!
+  }
+
+  input SubscriptionPreferenceInput {
+    mealPreferences: [MealPreferenceInput!]
+    defaultProductPreferences: [ProductPreferenceInput]
+    dietaryRestrictions: [String]
+    specialInstructions: String
+  }
+
+  input DeliveryMenuItemInput {
+    productId: ID!
+    title: String!
+    quantity: Int!
+    price: Float!
   }
 `;
 

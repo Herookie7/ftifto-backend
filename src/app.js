@@ -184,6 +184,44 @@ app.get('/api/ready', (req, res) => {
   });
 });
 
+// Comprehensive health check endpoint for monitoring (Render, etc.)
+app.get('/health', (req, res) => {
+  const mongoState = mapMongoState(mongoose.connection.readyState);
+  const uptime = process.uptime();
+  const isHealthy = mongoose.connection.readyState === 1 && apolloServer;
+
+  const health = {
+    status: isHealthy ? 'healthy' : 'unhealthy',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(uptime),
+    environment: config.app.nodeEnv,
+    version: version,
+    services: {
+      mongodb: {
+        status: mongoState,
+        connected: mongoose.connection.readyState === 1
+      },
+      graphql: {
+        status: apolloServer ? 'running' : 'initializing',
+        endpoint: '/graphql'
+      }
+    },
+    system: {
+      platform: os.platform(),
+      hostname: os.hostname(),
+      memory: {
+        total: Math.floor(os.totalmem() / 1024 / 1024),
+        free: Math.floor(os.freemem() / 1024 / 1024),
+        used: Math.floor((os.totalmem() - os.freemem()) / 1024 / 1024)
+      },
+      cpus: os.cpus().length
+    }
+  };
+
+  const statusCode = isHealthy ? 200 : 503;
+  res.status(statusCode).json(health);
+});
+
 app.get('/status', (req, res) => {
   const uptime = process.uptime();
   const mongoState = mapMongoState(mongoose.connection.readyState);
@@ -257,26 +295,26 @@ const initializeGraphQL = async (server) => {
             const decoded = verifyToken(token);
             const User = require('./models/User');
             const user = await User.findById(decoded.id);
-            
+
             if (!user) {
               return { user: null };
             }
-            
+
             if (user.isActive === false) {
               logger.warn('Inactive user attempted GraphQL subscription', { userId: user._id.toString() });
               return { user: null };
             }
-            
+
             return { user };
           } catch (error) {
             logger.warn('Invalid token in subscription context', { error: error.message });
             return { user: null };
           }
         }
-        
+
         // Query/Mutation context
         const token = req?.headers?.authorization?.split(' ')[1] || null;
-        
+
         if (!token) {
           return { user: null };
         }
@@ -286,16 +324,16 @@ const initializeGraphQL = async (server) => {
           const decoded = verifyToken(token);
           const User = require('./models/User');
           const user = await User.findById(decoded.id);
-          
+
           if (!user) {
             return { user: null };
           }
-          
+
           if (user.isActive === false) {
             logger.warn('Inactive user attempted GraphQL operation', { userId: user._id.toString() });
             return { user: null };
           }
-          
+
           return { user };
         } catch (error) {
           logger.warn('Invalid token in GraphQL context', { error: error.message });
@@ -313,25 +351,25 @@ const initializeGraphQL = async (server) => {
     });
 
     await apolloServer.start();
-    
+
     // Apply Apollo Server middleware - handles both GET and POST for /graphql
-    apolloServer.applyMiddleware({ 
-      app, 
+    apolloServer.applyMiddleware({
+      app,
       path: '/graphql',
       cors: false // CORS is already handled by express cors middleware
     });
-    
+
     // Install WebSocket subscription handlers if server is provided
     if (server) {
       const { SubscriptionServer } = require('subscriptions-transport-ws');
       const { execute, subscribe } = require('graphql');
       const { makeExecutableSchema } = require('@graphql-tools/schema');
-      
+
       const schema = makeExecutableSchema({
         typeDefs,
         resolvers
       });
-      
+
       const subscriptionServer = SubscriptionServer.create(
         {
           schema,
@@ -339,9 +377,9 @@ const initializeGraphQL = async (server) => {
           subscribe,
           onConnect: async (connectionParams, websocket) => {
             // Extract token from connection params
-            const token = connectionParams?.authorization?.split(' ')[1] || 
-                         connectionParams?.Authorization?.split(' ')[1] || null;
-            
+            const token = connectionParams?.authorization?.split(' ')[1] ||
+              connectionParams?.Authorization?.split(' ')[1] || null;
+
             let user = null;
             if (token) {
               try {
@@ -353,7 +391,7 @@ const initializeGraphQL = async (server) => {
                 logger.warn('Invalid token in WebSocket connection', { error: error.message });
               }
             }
-            
+
             return { user, authorization: connectionParams?.authorization || connectionParams?.Authorization };
           },
           onDisconnect: () => {
@@ -365,14 +403,14 @@ const initializeGraphQL = async (server) => {
           path: '/graphql'
         }
       );
-      
+
       logger.info('GraphQL WebSocket subscriptions enabled at /graphql');
       console.log('✅ GraphQL WebSocket subscriptions enabled');
     }
-    
+
     logger.info('GraphQL server started successfully at /graphql');
     console.log('✅ GraphQL server started at /graphql');
-    
+
     return true;
   } catch (error) {
     logger.error('Failed to start GraphQL server', { error: error.message, stack: error.stack });
@@ -383,10 +421,10 @@ const initializeGraphQL = async (server) => {
 
 // GraphQL health check endpoint (must be before /api routes)
 app.get('/graphql/health', (req, res) => {
-  res.json({ 
+  res.json({
     status: apolloServer ? 'ok' : 'initializing',
-    message: apolloServer 
-      ? 'GraphQL endpoint is available' 
+    message: apolloServer
+      ? 'GraphQL endpoint is available'
       : 'GraphQL endpoint is initializing',
     endpoint: '/graphql'
   });
@@ -396,21 +434,21 @@ app.get('/graphql/health', (req, res) => {
 // This ensures the route is available even if applyMiddleware has timing issues
 app.post('/graphql', async (req, res) => {
   if (!apolloServer) {
-    return res.status(503).json({ 
-      errors: [{ message: 'GraphQL server is initializing' }] 
+    return res.status(503).json({
+      errors: [{ message: 'GraphQL server is initializing' }]
     });
   }
-  
+
   try {
     // Extract GraphQL request from body
     const { query, variables, operationName } = req.body;
-    
+
     if (!query) {
-      return res.status(400).json({ 
-        errors: [{ message: 'GraphQL query is required' }] 
+      return res.status(400).json({
+        errors: [{ message: 'GraphQL query is required' }]
       });
     }
-    
+
     // Execute the GraphQL operation
     const result = await apolloServer.executeOperation({
       query,
@@ -420,7 +458,7 @@ app.post('/graphql', async (req, res) => {
       req,
       res
     });
-    
+
     // Send the response - handle both single and batch results
     if (result.body && result.body.kind === 'single') {
       res.json(result.body.singleResult);
@@ -431,8 +469,8 @@ app.post('/graphql', async (req, res) => {
     }
   } catch (error) {
     logger.error('GraphQL POST handler error', { error: error.message, stack: error.stack });
-    res.status(500).json({ 
-      errors: [{ message: error.message }] 
+    res.status(500).json({
+      errors: [{ message: error.message }]
     });
   }
 });

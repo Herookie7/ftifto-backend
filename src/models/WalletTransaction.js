@@ -54,6 +54,11 @@ const walletTransactionSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
+    franchise: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Franchise',
+      index: true
+    },
     status: {
       type: String,
       enum: ['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'],
@@ -65,5 +70,6 @@ const walletTransactionSchema = new mongoose.Schema(
 
 walletTransactionSchema.index({ userId: 1, createdAt: -1 });
 walletTransactionSchema.index({ userType: 1, createdAt: -1 });
+walletTransactionSchema.index({ franchise: 1, createdAt: -1 });
 
 module.exports = mongoose.model('WalletTransaction', walletTransactionSchema);

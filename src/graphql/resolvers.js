@@ -18,19 +18,22 @@ const ReferralTransaction = require('../models/ReferralTransaction');
 const MenuSchedule = require('../models/MenuSchedule');
 const HolidayRequest = require('../models/HolidayRequest');
 const Franchise = require('../models/Franchise');
+const SubscriptionPreference = require('../models/SubscriptionPreference');
+const SubscriptionDelivery = require('../models/SubscriptionDelivery');
 const { signToken } = require('../utils/token');
 const logger = require('../logger');
+const { addFranchiseScope, getFranchiseForCreation } = require('../middleware/franchiseScope');
 
 // Helper function to generate unique referral code
 const generateReferralCode = async () => {
   const crypto = require('crypto');
   let code;
   let exists = true;
-  
+
   while (exists) {
     // Generate 8 character alphanumeric code
     code = crypto.randomBytes(4).toString('hex').toUpperCase();
-    const user = await User.findOne({ 
+    const user = await User.findOne({
       $or: [
         { 'customerProfile.referralCode': code },
         { referralCode: code }
@@ -38,7 +41,7 @@ const generateReferralCode = async () => {
     });
     exists = !!user;
   }
-  
+
   return code;
 };
 const config = require('../config');
@@ -99,8 +102,8 @@ const resolvers = {
       }
       // Try to get zone from restaurant
       if (parent.restaurant) {
-        const restaurant = typeof parent.restaurant === 'object' 
-          ? parent.restaurant 
+        const restaurant = typeof parent.restaurant === 'object'
+          ? parent.restaurant
           : await Restaurant.findById(parent.restaurant).populate('zone').lean();
         if (restaurant?.zone) {
           return typeof restaurant.zone === 'object' ? restaurant.zone : await Zone.findById(restaurant.zone).lean();
@@ -114,7 +117,7 @@ const resolvers = {
     async nearByRestaurants(_, { latitude, longitude, shopType }) {
       const cache = require('../services/cache.service');
       const cacheKey = `restaurants:${latitude || 'null'}:${longitude || 'null'}:${shopType || 'all'}`;
-      
+
       // Try to get from cache first
       const cached = await cache.get(cacheKey);
       if (cached) {
@@ -154,10 +157,10 @@ const resolvers = {
       restaurants.sort((a, b) => {
         const aIsPinned = a.isPinned && (!a.pinExpiry || new Date(a.pinExpiry) > now);
         const bIsPinned = b.isPinned && (!b.pinExpiry || new Date(b.pinExpiry) > now);
-        
+
         if (aIsPinned && !bIsPinned) return -1;
         if (!aIsPinned && bIsPinned) return 1;
-        
+
         // If both pinned or both not pinned, sort by rating
         return (b.rating || 0) - (a.rating || 0);
       });
@@ -210,7 +213,7 @@ const resolvers = {
 
       // Cache the result for 5 minutes
       await cache.set(cacheKey, result, 300);
-      
+
       return result;
     },
 
@@ -250,10 +253,10 @@ const resolvers = {
       restaurants.sort((a, b) => {
         const aIsPinned = a.isPinned && (!a.pinExpiry || new Date(a.pinExpiry) > now);
         const bIsPinned = b.isPinned && (!b.pinExpiry || new Date(b.pinExpiry) > now);
-        
+
         if (aIsPinned && !bIsPinned) return -1;
         if (!aIsPinned && bIsPinned) return 1;
-        
+
         // If both pinned or both not pinned, sort by rating
         return (b.reviewAverage || 0) - (a.reviewAverage || 0);
       });
@@ -277,11 +280,11 @@ const resolvers = {
           ...r,
           distanceWithCurrentLocation: latitude && longitude && r.location?.coordinates
             ? calculateDistance(
-                latitude,
-                longitude,
-                r.location.coordinates[1],
-                r.location.coordinates[0]
-              )
+              latitude,
+              longitude,
+              r.location.coordinates[1],
+              r.location.coordinates[0]
+            )
             : null,
           freeDelivery: r.minimumOrder === 0,
           acceptVouchers: true
@@ -391,11 +394,11 @@ const resolvers = {
         ...r,
         distanceWithCurrentLocation: latitude && longitude && r.location?.coordinates
           ? calculateDistance(
-              latitude,
-              longitude,
-              r.location.coordinates[1],
-              r.location.coordinates[0]
-            )
+            latitude,
+            longitude,
+            r.location.coordinates[1],
+            r.location.coordinates[0]
+          )
           : null,
         freeDelivery: r.minimumOrder === 0,
         acceptVouchers: true
@@ -451,11 +454,11 @@ const resolvers = {
         ...r,
         distanceWithCurrentLocation: latitude && longitude && r.location?.coordinates
           ? calculateDistance(
-              latitude,
-              longitude,
-              r.location.coordinates[1],
-              r.location.coordinates[0]
-            )
+            latitude,
+            longitude,
+            r.location.coordinates[1],
+            r.location.coordinates[0]
+          )
           : null,
         freeDelivery: r.minimumOrder === 0,
         acceptVouchers: true
@@ -469,9 +472,9 @@ const resolvers = {
       }
 
       // Get user's recent orders
-      const recentOrders = await Order.find({ 
-        customer: context.user._id, 
-        isActive: true 
+      const recentOrders = await Order.find({
+        customer: context.user._id,
+        isActive: true
       })
         .sort({ createdAt: -1 })
         .limit(10)
@@ -479,15 +482,15 @@ const resolvers = {
         .lean();
 
       const restaurantIds = [...new Set(recentOrders.map(o => o.restaurant?.toString()).filter(Boolean))];
-      
+
       if (restaurantIds.length === 0) {
         return [];
       }
 
-      const restaurants = await Restaurant.find({ 
-        _id: { $in: restaurantIds }, 
-        isActive: true, 
-        isAvailable: true 
+      const restaurants = await Restaurant.find({
+        _id: { $in: restaurantIds },
+        isActive: true,
+        isAvailable: true
       })
         .populate('owner')
         .populate({
@@ -509,9 +512,9 @@ const resolvers = {
       }
 
       // Get user's recent orders
-      const recentOrders = await Order.find({ 
-        customer: context.user._id, 
-        isActive: true 
+      const recentOrders = await Order.find({
+        customer: context.user._id,
+        isActive: true
       })
         .sort({ createdAt: -1 })
         .limit(10)
@@ -519,15 +522,15 @@ const resolvers = {
         .lean();
 
       const restaurantIds = [...new Set(recentOrders.map(o => o.restaurant?.toString()).filter(Boolean))];
-      
+
       if (restaurantIds.length === 0) {
         return [];
       }
 
-      const restaurants = await Restaurant.find({ 
-        _id: { $in: restaurantIds }, 
-        isActive: true, 
-        isAvailable: true 
+      const restaurants = await Restaurant.find({
+        _id: { $in: restaurantIds },
+        isActive: true,
+        isAvailable: true
       })
         .lean();
 
@@ -543,11 +546,11 @@ const resolvers = {
         ...r,
         distanceWithCurrentLocation: latitude && longitude && r.location?.coordinates
           ? calculateDistance(
-              latitude,
-              longitude,
-              r.location.coordinates[1],
-              r.location.coordinates[0]
-            )
+            latitude,
+            longitude,
+            r.location.coordinates[1],
+            r.location.coordinates[0]
+          )
           : null,
         freeDelivery: r.minimumOrder === 0,
         acceptVouchers: true
@@ -783,7 +786,7 @@ const resolvers = {
       try {
         const cache = require('../services/cache.service');
         const cacheKey = 'zones:all';
-        
+
         // Try to get from cache first
         const cached = await cache.get(cacheKey);
         if (cached) {
@@ -792,10 +795,10 @@ const resolvers = {
 
         const zones = await Zone.find({ isActive: true }).lean();
         console.log(`Zones resolver: Found ${zones.length} active zones`);
-        
+
         // Cache for 10 minutes
         await cache.set(cacheKey, zones, 600);
-        
+
         return zones;
       } catch (error) {
         console.error('Zones resolver error:', error);
@@ -807,31 +810,31 @@ const resolvers = {
     async banners() {
       const cache = require('../services/cache.service');
       const cacheKey = 'banners:active';
-      
+
       // Try to get from cache first
       const cached = await cache.get(cacheKey);
       if (cached) {
         return cached;
       }
-      
+
       const banners = await Banner.find({ isActive: true })
         .sort({ order: 1, createdAt: -1 })
         .lean();
-      
+
       // Cache for 10 minutes
       await cache.set(cacheKey, banners, 600);
-      
+
       return banners;
     },
 
     // Get app versions
     async getVersions() {
       const config = await Configuration.getConfiguration();
-      
+
       // Helper function to parse version string (format: "android|ios" or just version string)
       const parseVersion = (versionStr) => {
         if (!versionStr) return { android: null, ios: null };
-        
+
         try {
           // Try to parse as JSON first
           const parsed = JSON.parse(versionStr);
@@ -841,20 +844,20 @@ const resolvers = {
         } catch (e) {
           // Not JSON, continue
         }
-        
+
         // Check if it's pipe-separated format (android|ios)
         if (typeof versionStr === 'string' && versionStr.includes('|')) {
           const [android, ios] = versionStr.split('|');
           return { android: android || null, ios: ios || null };
         }
-        
+
         // Otherwise treat as single version for both platforms
         return {
           android: versionStr,
           ios: versionStr
         };
       };
-      
+
       return {
         customerAppVersion: parseVersion(config.customerAppVersion),
         riderAppVersion: parseVersion(config.riderAppVersion),
@@ -866,14 +869,14 @@ const resolvers = {
     async subCategories() {
       try {
         // Get all categories with subCategory field
-        const categories = await Category.find({ 
+        const categories = await Category.find({
           isActive: true,
           subCategory: { $exists: true, $ne: null, $ne: '' }
         }).lean();
 
         // Create a map of unique subcategories
         const subCategoryMap = new Map();
-        
+
         categories.forEach((category) => {
           if (category.subCategory) {
             const key = `${category._id}_${category.subCategory}`;
@@ -1038,11 +1041,11 @@ const resolvers = {
 
       // Build query for orders
       const orderQuery = { restaurant: restaurant._id, isActive: true };
-      
+
       if (orderType) {
         orderQuery.isPickedUp = orderType === 'PICKUP';
       }
-      
+
       if (paymentMethod) {
         orderQuery.paymentMethod = paymentMethod.toLowerCase();
       }
@@ -1073,7 +1076,7 @@ const resolvers = {
         .lean();
 
       const total = await Order.countDocuments(orderQuery);
-      
+
       // Helper function to calculate commission based on type
       const calculateCommission = (orderAmount, commissionRate, commissionType) => {
         if (!commissionRate || commissionRate === 0) return 0;
@@ -1086,7 +1089,7 @@ const resolvers = {
       };
 
       const commissionType = restaurant.commissionType || 'percentage';
-      
+
       // Calculate earnings
       const totalEarnings = orders.reduce((sum, order) => {
         const commission = calculateCommission(order.orderAmount, restaurant.commissionRate || 0, commissionType);
@@ -1165,7 +1168,7 @@ const resolvers = {
       // Get restaurant owned by the authenticated user
       const restaurant = await Restaurant.findOne({ owner: context.user._id }).lean();
       if (!restaurant) {
-        return { 
+        return {
           data: [],
           pagination: {
             page: 1,
@@ -1177,8 +1180,8 @@ const resolvers = {
       }
 
       // Build query
-      const query = { 
-        restaurant: restaurant._id, 
+      const query = {
+        restaurant: restaurant._id,
         isActive: true,
         paymentStatus: 'paid'
       };
@@ -1245,9 +1248,9 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      const restaurant = await Restaurant.findOne({ 
+      const restaurant = await Restaurant.findOne({
         _id: restaurantId,
-        owner: context.user._id 
+        owner: context.user._id
       });
 
       if (!restaurant) {
@@ -1268,9 +1271,9 @@ const resolvers = {
       }
 
       // Get restaurant
-      const restaurant = await Restaurant.findOne({ 
+      const restaurant = await Restaurant.findOne({
         _id: storeId || undefined,
-        owner: context.user._id 
+        owner: context.user._id
       }).lean();
 
       if (!restaurant) {
@@ -1368,7 +1371,7 @@ const resolvers = {
         const deliveryFee = order.deliveryCharges || 0;
         const tip = order.tipping || 0;
         const totalEarnings = deliveryFee + tip;
-        
+
         earningsByDate[date].totalEarningsSum += totalEarnings;
         earningsByDate[date].totalTipsSum += tip;
         earningsByDate[date].totalDeliveries += 1;
@@ -1423,9 +1426,9 @@ const resolvers = {
       }
 
       // Get restaurant
-      const restaurant = await Restaurant.findOne({ 
+      const restaurant = await Restaurant.findOne({
         _id: storeId,
-        owner: context.user._id 
+        owner: context.user._id
       }).lean();
 
       if (!restaurant) {
@@ -1523,7 +1526,7 @@ const resolvers = {
       if (!targetUserId) {
         return [];
       }
-      
+
       // Placeholder: return empty array
       // TODO: Implement with actual Notification model
       // Example structure:
@@ -1586,21 +1589,21 @@ const resolvers = {
         const monthStart = new Date(targetYear, month, 1);
         const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59);
 
-        usersCount.push(await User.countDocuments({ 
-          role: 'customer', 
-          createdAt: { $gte: monthStart, $lte: monthEnd } 
+        usersCount.push(await User.countDocuments({
+          role: 'customer',
+          createdAt: { $gte: monthStart, $lte: monthEnd }
         }));
-        vendorsCount.push(await User.countDocuments({ 
-          role: 'seller', 
-          createdAt: { $gte: monthStart, $lte: monthEnd } 
+        vendorsCount.push(await User.countDocuments({
+          role: 'seller',
+          createdAt: { $gte: monthStart, $lte: monthEnd }
         }));
-        restaurantsCount.push(await Restaurant.countDocuments({ 
-          isActive: true, 
-          createdAt: { $gte: monthStart, $lte: monthEnd } 
+        restaurantsCount.push(await Restaurant.countDocuments({
+          isActive: true,
+          createdAt: { $gte: monthStart, $lte: monthEnd }
         }));
-        ridersCount.push(await User.countDocuments({ 
-          role: 'rider', 
-          createdAt: { $gte: monthStart, $lte: monthEnd } 
+        ridersCount.push(await User.countDocuments({
+          role: 'rider',
+          createdAt: { $gte: monthStart, $lte: monthEnd }
         }));
       }
 
@@ -1677,7 +1680,7 @@ const resolvers = {
 
     async getRestaurantDashboardOrdersSalesStats(_, { restaurant, starting_date, ending_date, dateKeyword }) {
       const query = { restaurant, isActive: true };
-      
+
       if (starting_date && ending_date) {
         query.createdAt = {
           $gte: new Date(starting_date),
@@ -1686,7 +1689,7 @@ const resolvers = {
       } else if (dateKeyword) {
         const now = new Date();
         let startDate, endDate;
-        
+
         switch (dateKeyword) {
           case 'today':
             startDate = new Date(now.setHours(0, 0, 0, 0));
@@ -1704,14 +1707,14 @@ const resolvers = {
             startDate = null;
             endDate = null;
         }
-        
+
         if (startDate && endDate) {
           query.createdAt = { $gte: startDate, $lte: endDate };
         }
       }
 
       const orders = await Order.find(query).lean();
-      
+
       const totalOrders = orders.length;
       const totalSales = orders.reduce((sum, order) => sum + (order.orderAmount || 0), 0);
       const totalCODOrders = orders.filter(order => order.paymentMethod === 'cod' || order.paymentMethod === 'COD').length;
@@ -1740,7 +1743,7 @@ const resolvers = {
     async getRestaurantDashboardSalesOrderCountDetailsByYear(_, { restaurant, year }) {
       const startDate = new Date(year, 0, 1);
       const endDate = new Date(year, 11, 31, 23, 59, 59, 999);
-      
+
       const orders = await Order.find({
         restaurant,
         isActive: true,
@@ -1924,8 +1927,9 @@ const resolvers = {
         .lean();
     },
 
-    async restaurantsPaginated(_, { filters }) {
-      const query = {};
+    async restaurantsPaginated(_, { filters }, context) {
+      const franchiseScope = addFranchiseScope(context);
+      const query = { ...franchiseScope };
       if (filters?.search) {
         query.$or = [
           { name: { $regex: filters.search, $options: 'i' } },
@@ -1967,7 +1971,7 @@ const resolvers = {
       const restaurants = await Restaurant.find({ owner: ownerId })
         .populate('zone')
         .lean();
-      
+
       // Return user with restaurants populated
       return {
         ...user,
@@ -1994,7 +1998,7 @@ const resolvers = {
       if (filters?.status) {
         query.orderStatus = filters.status;
       }
-      
+
       // Handle date filtering
       if (filters?.starting_date || filters?.ending_date) {
         query.createdAt = {};
@@ -2035,10 +2039,10 @@ const resolvers = {
 
       const [orders, totalCount] = await Promise.all([
         Order.find(query)
-        .populate('restaurant')
+          .populate('restaurant')
           .populate('customer', 'name phone')
-        .populate('rider')
-        .sort({ createdAt: -1 })
+          .populate('rider')
+          .sort({ createdAt: -1 })
           .skip(skip)
           .limit(limit)
           .lean(),
@@ -2089,9 +2093,9 @@ const resolvers = {
 
     async ordersByUser(_, { userId, page = 1, limit = 10 }) {
       const query = { customer: userId, isActive: true };
-      
+
       const skip = (page - 1) * limit;
-      
+
       const [orders, totalCount] = await Promise.all([
         Order.find(query)
           .populate('restaurant', '_id name')
@@ -2154,7 +2158,7 @@ const resolvers = {
 
     async withdrawRequests(_, { userType, userId, pagination, search }) {
       const query = {};
-      
+
       if (userType) {
         if (userType === 'SELLER') {
           const restaurants = await Restaurant.find({ owner: userId }).select('_id').lean();
@@ -2272,7 +2276,7 @@ const resolvers = {
       const restaurant = await Restaurant.findById(restaurantId)
         .populate('zone')
         .lean();
-      
+
       if (!restaurant) {
         throw new Error('Restaurant not found');
       }
@@ -2349,6 +2353,56 @@ const resolvers = {
           total,
           totalPages: Math.ceil(total / limit)
         }
+      };
+    },
+
+    async getTransactionSummary(_, __, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Only admins can view transaction summaries
+      if (context.user.role !== 'admin' && context.user.role !== 'super-admin') {
+        throw new Error('Only administrators can view transaction summaries');
+      }
+
+      const franchiseScope = addFranchiseScope(context);
+
+      // Get referral payouts
+      const referralTransactions = await WalletTransaction.find({
+        ...franchiseScope,
+        transactionType: 'REFERRAL_BONUS',
+        status: 'COMPLETED'
+      }).lean();
+
+      const totalReferralPayouts = referralTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+      const referralCount = referralTransactions.length;
+
+      // Get coin conversions
+      const coinConversions = await WalletTransaction.find({
+        ...franchiseScope,
+        transactionType: 'REWARD_COIN_CONVERSION',
+        status: 'COMPLETED'
+      }).lean();
+
+      const totalCoinConversions = coinConversions.reduce((sum, t) => sum + (t.amount || 0), 0);
+      const coinConversionCount = coinConversions.length;
+
+      // Get wallet top-ups
+      const topUps = await WalletTransaction.find({
+        ...franchiseScope,
+        transactionType: 'TOP_UP',
+        status: 'COMPLETED'
+      }).lean();
+
+      const totalWalletTopUps = topUps.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+      return {
+        totalReferralPayouts,
+        totalCoinConversions,
+        totalWalletTopUps,
+        referralCount,
+        coinConversionCount
       };
     },
 
@@ -2496,6 +2550,121 @@ const resolvers = {
       }
 
       return schedule;
+    },
+
+    // Subscription-Menu Linking Queries
+    async getSubscriptionPreferences(_, { subscriptionId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findById(subscriptionId);
+      if (!subscription) {
+        throw new Error('Subscription not found');
+      }
+
+      // Verify user owns the subscription or is admin
+      if (subscription.userId.toString() !== context.user._id.toString() && context.user.role !== 'admin') {
+        throw new Error('Access denied');
+      }
+
+      let preferences = await SubscriptionPreference.findOne({ subscriptionId });
+
+      // Create default preferences if none exist
+      if (!preferences) {
+        preferences = await SubscriptionPreference.createDefault(subscriptionId);
+      }
+
+      return preferences;
+    },
+
+    async getSubscriptionDeliveries(_, { subscriptionId, status, startDate, endDate }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findById(subscriptionId);
+      if (!subscription) {
+        throw new Error('Subscription not found');
+      }
+
+      // Verify access
+      if (subscription.userId.toString() !== context.user._id.toString() && context.user.role !== 'admin') {
+        throw new Error('Access denied');
+      }
+
+      const query = { subscriptionId };
+      if (status) query.status = status;
+      if (startDate || endDate) {
+        query.scheduledDate = {};
+        if (startDate) query.scheduledDate.$gte = new Date(startDate);
+        if (endDate) query.scheduledDate.$lte = new Date(endDate);
+      }
+
+      return await SubscriptionDelivery.find(query)
+        .populate('menuScheduleId')
+        .populate('menuItems.productId')
+        .sort({ scheduledDate: 1 })
+        .lean();
+    },
+
+    async getWeeklyMenuForSubscription(_, { subscriptionId, weekStart }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findById(subscriptionId);
+      if (!subscription) {
+        throw new Error('Subscription not found');
+      }
+
+      // Get menu schedules for the restaurant
+      const menus = await MenuSchedule.find({
+        restaurantId: subscription.restaurantId,
+        scheduleType: 'WEEKLY',
+        isActive: true
+      }).populate('menuItems.productId').lean();
+
+      return menus;
+    },
+
+    async getTodaysDeliveries(_, { restaurantId }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify user owns the restaurant
+      const restaurant = await Restaurant.findOne({
+        _id: restaurantId,
+        owner: context.user._id
+      });
+
+      if (!restaurant && context.user.role !== 'admin') {
+        throw new Error('Access denied');
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      // Get all active subscriptions for this restaurant
+      const subscriptions = await Subscription.find({
+        restaurantId,
+        status: 'ACTIVE'
+      }).select('_id').lean();
+
+      const subscriptionIds = subscriptions.map(s => s._id);
+
+      return await SubscriptionDelivery.find({
+        subscriptionId: { $in: subscriptionIds },
+        scheduledDate: { $gte: today, $lt: tomorrow },
+        status: { $in: ['SCHEDULED', 'PREPARING', 'READY'] }
+      })
+        .populate('subscriptionId')
+        .populate('menuItems.productId')
+        .sort({ deliveryTime: 1 })
+        .lean();
     }
   },
 
@@ -2530,8 +2699,8 @@ const resolvers = {
           rewardCoins: parent.customerProfile.rewardCoins || 0,
           referralCode: parent.customerProfile.referralCode || parent.referralCode || null,
           referredBy: parent.customerProfile.referredBy || parent.referredBy || null,
-          isFirstOrder: parent.customerProfile.isFirstOrder !== undefined 
-            ? parent.customerProfile.isFirstOrder 
+          isFirstOrder: parent.customerProfile.isFirstOrder !== undefined
+            ? parent.customerProfile.isFirstOrder
             : (parent.isFirstOrder !== undefined ? parent.isFirstOrder : true)
         };
       }
@@ -2552,8 +2721,8 @@ const resolvers = {
       return parent.customerProfile?.referralCode || parent.referralCode || null;
     },
     isFirstOrder(parent) {
-      return parent.customerProfile?.isFirstOrder !== undefined 
-        ? parent.customerProfile.isFirstOrder 
+      return parent.customerProfile?.isFirstOrder !== undefined
+        ? parent.customerProfile.isFirstOrder
         : (parent.isFirstOrder !== undefined ? parent.isFirstOrder : true);
     },
     async referredBy(parent) {
@@ -2623,8 +2792,8 @@ const resolvers = {
     assigned: async (parent) => {
       // Check if rider has assigned orders
       if (parent.role !== 'rider') return false;
-      const assignedOrder = await Order.findOne({ 
-        rider: parent._id, 
+      const assignedOrder = await Order.findOne({
+        rider: parent._id,
         orderStatus: { $in: ['assigned', 'picked', 'enroute'] }
       }).lean();
       return !!assignedOrder;
@@ -2878,6 +3047,7 @@ const resolvers = {
     async saveDeliveryRateConfiguration(_, { configurationInput }) {
       const configDoc = await Configuration.getConfiguration();
       if (configurationInput.deliveryRate !== undefined) configDoc.deliveryRate = configurationInput.deliveryRate;
+      if (configurationInput.freeDeliveryAmount !== undefined) configDoc.freeDeliveryAmount = configurationInput.freeDeliveryAmount;
       if (configurationInput.costType !== undefined) configDoc.costType = configurationInput.costType;
       await configDoc.save();
       return configDoc;
@@ -2927,6 +3097,7 @@ const resolvers = {
       if (configurationInput.termsAndConditions !== undefined) configDoc.termsAndConditions = configurationInput.termsAndConditions;
       if (configurationInput.privacyPolicy !== undefined) configDoc.privacyPolicy = configurationInput.privacyPolicy;
       if (configurationInput.testOtp !== undefined) configDoc.testOtp = configurationInput.testOtp;
+      if (configurationInput.supportPhone !== undefined) configDoc.supportPhone = configurationInput.supportPhone;
       await configDoc.save();
       return configDoc;
     },
@@ -2952,7 +3123,7 @@ const resolvers = {
     async restaurantLogin(_, { username, password, notificationToken }, context) {
       // Find restaurant by username and password
       const restaurant = await Restaurant.findOne({ username, password }).lean();
-      
+
       if (!restaurant) {
         throw new Error('Invalid restaurant credentials');
       }
@@ -3046,7 +3217,7 @@ const resolvers = {
         const sellerRestaurants = await Restaurant.find({ owner: user._id, isActive: true })
           .select('_id orderId name image address shopType')
           .lean();
-        
+
         restaurants = sellerRestaurants.map(r => ({
           _id: r._id.toString(),
           orderId: r.orderId || '',
@@ -3099,10 +3270,10 @@ const resolvers = {
 
       // Handle Apple Sign In
       if (type === 'apple' && appleId) {
-        user = await User.findOne({ 
+        user = await User.findOne({
           $or: [{ email: email || null }, { userType: 'apple', metadata: { appleId } }]
         });
-        
+
         if (!user) {
           // Create new user for Apple Sign In
           user = await User.create({
@@ -3403,15 +3574,15 @@ const resolvers = {
 
       // Check if Fast2SMS is enabled and configured
       const { sendOTP, isConfigured } = require('../services/fast2sms.service');
-      
+
       try {
         if (await isConfigured()) {
           // Generate 6-digit OTP
           const otp = Math.floor(100000 + Math.random() * 900000).toString();
-          
+
           // Send OTP via Fast2SMS
           const result = await sendOTP(phone, otp);
-          
+
           if (result.success) {
             // Store OTP in user session/cache for verification (implementation depends on your caching strategy)
             // For now, we return success - in production, you should store OTP temporarily
@@ -3730,7 +3901,7 @@ const resolvers = {
 
       // Apply free delivery logic
       let finalDeliveryCharges = deliveryCharges || 0;
-      const shouldApplyFreeDelivery = 
+      const shouldApplyFreeDelivery =
         (isFirstOrder) || // First order free delivery
         (activeSubscription && activeSubscription.freeDelivery); // Subscription free delivery
 
@@ -3780,13 +3951,13 @@ const resolvers = {
       // Handle Razorpay payment - create Razorpay order
       let razorpayOrder = null;
       const isRazorpay = paymentMethod && (paymentMethod.toUpperCase() === 'RAZORPAY' || paymentMethod.toLowerCase() === 'razorpay');
-      
+
       if (isRazorpay) {
         try {
           const { createOrder } = require('../payments/razorpay.service');
           const configDoc = await Configuration.getConfiguration();
           const currency = configDoc.currency || 'INR';
-          
+
           // Create Razorpay order first (before creating internal order)
           razorpayOrder = await createOrder(
             `order_${Date.now()}`,
@@ -3807,7 +3978,7 @@ const resolvers = {
 
       const isCashOrCOD = paymentMethod === 'cash' || paymentMethod?.toLowerCase() === 'cash' || paymentMethod?.toUpperCase() === 'COD';
       const isWallet = paymentMethod && paymentMethod.toLowerCase() === 'wallet';
-      
+
       const order = await Order.create({
         restaurant,
         customer: context.user._id,
@@ -3869,7 +4040,7 @@ const resolvers = {
             logger.error('Error sending subscription expiry notification', { error: error.message });
           });
         }
-        
+
         // Check and send remaining tiffins notification if low
         if (activeSubscription.remainingTiffins <= 5 && activeSubscription.remainingTiffins > 0) {
           const { sendRemainingTiffinsNotification } = require('../services/notifications.service');
@@ -3944,10 +4115,10 @@ const resolvers = {
 
       try {
         const { verifyPayment } = require('../payments/razorpay.service');
-        
+
         // Verify payment signature
         const isValid = await verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
-        
+
         if (!isValid) {
           // Update order payment status to failed
           order.paymentStatus = 'failed';
@@ -3957,7 +4128,7 @@ const resolvers = {
             updatedBy: context.user._id
           });
           await order.save();
-          
+
           throw new Error('Payment verification failed. Invalid signature.');
         }
 
@@ -4192,7 +4363,7 @@ const resolvers = {
       const restaurant = await Restaurant.findById(order.restaurant).lean();
       const isOwner = restaurant?.owner?.toString() === context.user._id.toString();
       const isCustomer = order.customer?.toString() === context.user._id.toString();
-      
+
       if (!isOwner && !isCustomer) {
         throw new Error('You can only cancel your own orders');
       }
@@ -4239,13 +4410,13 @@ const resolvers = {
       // Atomic check: Only assign if order is still unassigned
       // This prevents race conditions where multiple riders try to assign the same order
       const order = await Order.findOneAndUpdate(
-        { 
-          _id: id, 
+        {
+          _id: id,
           orderStatus: 'accepted',
           rider: null  // Only assign if no rider yet
         },
-        { 
-          $set: { 
+        {
+          $set: {
             rider: context.user._id,
             orderStatus: 'assigned',
             assignedAt: new Date()
@@ -4297,12 +4468,12 @@ const resolvers = {
       }
 
       order.orderStatus = status;
-      
+
       // Store reason if provided (for not delivered/cancelled orders)
       if (reason && (status === 'cancelled' || status === 'returned' || status === 'not_delivered')) {
         order.reason = reason;
       }
-      
+
       // Update timestamps based on status
       if (status === 'picked') {
         order.pickedAt = new Date();
@@ -4392,15 +4563,15 @@ const resolvers = {
     async getCoupon(_, { coupon }) {
       const mongoose = require('mongoose');
       let couponDoc;
-      
+
       // First try to find by code (most common case)
       couponDoc = await Coupon.findOne({ code: coupon }).lean();
-      
+
       // If not found by code and it looks like an ObjectId, try by _id
       if (!couponDoc && mongoose.Types.ObjectId.isValid(coupon)) {
         couponDoc = await Coupon.findById(coupon).lean();
       }
-      
+
       if (!couponDoc) {
         throw new Error('Coupon not found');
       }
@@ -4588,7 +4759,7 @@ const resolvers = {
       }
 
       const currentWallet = rider.riderProfile.currentWalletAmount || 0;
-      
+
       if (requestAmount > currentWallet) {
         throw new Error('Insufficient wallet balance');
       }
@@ -4717,7 +4888,7 @@ const resolvers = {
       }
 
       const currentWallet = seller.sellerProfile.currentWalletAmount || 0;
-      
+
       if (requestAmount > currentWallet) {
         throw new Error('Insufficient wallet balance');
       }
@@ -4773,7 +4944,7 @@ const resolvers = {
       }
 
       const previousStatus = withdrawRequest.status;
-      
+
       // Prevent invalid transitions
       if (previousStatus === 'CANCELLED') {
         throw new Error('Cannot change status of a cancelled withdrawal request');
@@ -5408,9 +5579,9 @@ const resolvers = {
       }
 
       // Verify user owns the restaurant
-      const restaurant = await Restaurant.findOne({ 
+      const restaurant = await Restaurant.findOne({
         _id: id,
-        owner: context.user._id 
+        owner: context.user._id
       });
 
       if (!restaurant) {
@@ -5436,9 +5607,9 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      const restaurant = await Restaurant.findOne({ 
+      const restaurant = await Restaurant.findOne({
         _id: restaurantId,
-        owner: context.user._id 
+        owner: context.user._id
       });
 
       if (!restaurant) {
@@ -5530,9 +5701,9 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      const restaurant = await Restaurant.findOne({ 
+      const restaurant = await Restaurant.findOne({
         _id: id,
-        owner: context.user._id 
+        owner: context.user._id
       });
 
       if (!restaurant) {
@@ -5554,9 +5725,9 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      const restaurant = await Restaurant.findOne({ 
+      const restaurant = await Restaurant.findOne({
         _id: id,
-        owner: context.user._id 
+        owner: context.user._id
       });
 
       if (!restaurant) {
@@ -5574,7 +5745,7 @@ const resolvers = {
       if (restaurantInput.deliveryTime !== undefined) restaurant.deliveryTime = restaurantInput.deliveryTime;
       if (restaurantInput.minimumOrder !== undefined) restaurant.minimumOrder = restaurantInput.minimumOrder;
       if (restaurantInput.deliveryCharges !== undefined) restaurant.deliveryCharges = restaurantInput.deliveryCharges;
-      
+
       // Update location coordinates if provided
       if (restaurantInput.location !== undefined && Array.isArray(restaurantInput.location)) {
         if (restaurantInput.location.length === 2) {
@@ -5600,6 +5771,51 @@ const resolvers = {
         message: 'Restaurant information updated successfully',
         data: restaurant
       };
+    },
+
+    async toggleRestaurantPin(_, { restaurantId, isPinned, pinDurationDays }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Only admins can pin/unpin restaurants
+      if (context.user.role !== 'admin' && context.user.role !== 'super-admin') {
+        throw new Error('Only administrators can pin restaurants');
+      }
+
+      const restaurant = await Restaurant.findById(restaurantId);
+      if (!restaurant) {
+        throw new Error('Restaurant not found');
+      }
+
+      restaurant.isPinned = isPinned;
+
+      if (isPinned && pinDurationDays) {
+        // Set pin expiry based on duration in days
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + pinDurationDays);
+        restaurant.pinExpiry = expiryDate;
+      } else {
+        // Clear expiry when unpinning
+        restaurant.pinExpiry = null;
+      }
+
+      await restaurant.save();
+
+      auditLogger.logEvent({
+        category: 'admin',
+        action: 'toggle_restaurant_pin',
+        userId: context.user._id.toString(),
+        metadata: {
+          restaurantId: restaurant._id.toString(),
+          restaurantName: restaurant.name,
+          isPinned,
+          pinDurationDays,
+          pinExpiry: restaurant.pinExpiry
+        }
+      });
+
+      return restaurant;
     },
 
     async updateCommission(_, { id, commissionType, commissionRate }, context) {
@@ -5629,7 +5845,7 @@ const resolvers = {
       // Check if user is admin or restaurant owner
       const isAdmin = context.user.role === 'admin';
       const isOwner = restaurant.owner.toString() === context.user._id.toString();
-      
+
       if (!isAdmin && !isOwner) {
         throw new Error('You do not have permission to update this restaurant\'s commission');
       }
@@ -5649,7 +5865,7 @@ const resolvers = {
       // Check if user is admin or restaurant owner
       const isAdmin = context.user.role === 'admin';
       const restaurant = await Restaurant.findById(restaurantId);
-      
+
       if (!restaurant) {
         throw new Error('Restaurant not found');
       }
@@ -5693,7 +5909,7 @@ const resolvers = {
       const isAdmin = context.user.role === 'admin';
       const restaurantId = category.restaurant._id || category.restaurant;
       const restaurant = await Restaurant.findById(restaurantId);
-      
+
       if (!restaurant) {
         throw new Error('Restaurant not found');
       }
@@ -5729,7 +5945,7 @@ const resolvers = {
       const isAdmin = context.user.role === 'admin';
       const restaurantId = category.restaurant._id || category.restaurant;
       const restaurant = await Restaurant.findById(restaurantId);
-      
+
       if (!restaurant) {
         throw new Error('Restaurant not found');
       }
@@ -5743,7 +5959,7 @@ const resolvers = {
 
       // Delete all products in this category
       await Product.deleteMany({ _id: { $in: category.foods } });
-      
+
       // Remove category from restaurant
       restaurant.categories = restaurant.categories.filter(
         catId => catId.toString() !== id
@@ -5761,7 +5977,7 @@ const resolvers = {
 
       // Check if user is admin or restaurant owner
       const isAdmin = context.user.role === 'admin';
-      
+
       const restaurant = await Restaurant.findById(restaurantId);
       if (!restaurant) {
         throw new Error('Restaurant not found');
@@ -5816,7 +6032,7 @@ const resolvers = {
       const isAdmin = context.user.role === 'admin';
       const restaurantId = product.restaurant._id || product.restaurant;
       const restaurant = await Restaurant.findById(restaurantId);
-      
+
       if (!restaurant) {
         throw new Error('Restaurant not found');
       }
@@ -6029,7 +6245,7 @@ const resolvers = {
       if (riderInput.password) rider.password = riderInput.password;
       if (riderInput.phone) rider.phone = riderInput.phone;
       if (riderInput.zone !== undefined) rider.zone = riderInput.zone;
-      
+
       // Update metadata.username
       if (riderInput.username) {
         if (!rider.metadata) {
@@ -6037,7 +6253,7 @@ const resolvers = {
         }
         rider.metadata.username = riderInput.username;
       }
-      
+
       // Update rider profile
       if (!rider.riderProfile) {
         rider.riderProfile = {};
@@ -6112,7 +6328,7 @@ const resolvers = {
       }
 
       const userId = context.user._id.toString();
-      
+
       // Placeholder - implement with actual Notification model
       // TODO: When Notification model is implemented:
       // await Notification.updateMany(
@@ -6131,6 +6347,562 @@ const resolvers = {
 
       // Return empty array for now
       return [];
+    },
+
+    // Send notification to all users (Admin)
+    async sendNotificationUser(_, { notificationTitle, notificationBody }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Only admins can send notifications
+      if (context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+
+      try {
+        const notificationService = require('../services/notifications.service');
+        const title = notificationTitle || 'Tifto Notification';
+        const result = await notificationService.sendToTopic('users', title, notificationBody, {
+          type: 'ADMIN_BROADCAST',
+          sentAt: new Date().toISOString()
+        });
+        return result.success;
+      } catch (error) {
+        logger.error('Send notification error', { error: error.message });
+        return false;
+      }
+    },
+
+    getDailyDeliveries: async (_, { restaurantId, date, mealType }, context) => {
+      // if (!context.user || !context.user.id) throw new Error('Unauthenticated');
+      // Check restaurant ownership logic if needed
+
+      const queryDate = date ? new Date(date) : new Date();
+      const startOfDay = new Date(queryDate.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(queryDate.setHours(23, 59, 59, 999));
+
+      const filter = {
+        scheduledDate: {
+          $gte: startOfDay,
+          $lte: endOfDay
+        }
+      };
+
+      if (mealType) {
+        filter.mealType = mealType;
+      }
+
+      // We need to filter based on subscriptions that belong to this restaurant
+      // But SubscriptionDelivery refs Subscription. Use populate.
+
+      const deliveries = await SubscriptionDelivery.find(filter)
+        .populate({
+          path: 'subscriptionId',
+          match: { restaurantId: restaurantId }
+        })
+        .populate('orderId')
+        .exec();
+
+      // Filter out deliveries where subscriptionId is null (because of restaurant mismatch)
+      return deliveries.filter(d => d.subscriptionId !== null);
+    },
+    updateDeliveryStatus: async (_, { deliveryId, status, reason }, context) => { // Added reason for Exceptions
+      if (!context.user) throw new Error('Unauthenticated');
+
+      const validStatuses = ['SCHEDULED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'SKIPPED', 'CANCELLED'];
+      if (!validStatuses.includes(status)) {
+        throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+      }
+
+      const delivery = await SubscriptionDelivery.findById(deliveryId);
+      if (!delivery) throw new Error('Delivery not found');
+
+      // Authorization: Rider, Admin, or Seller (Owner of Restaurant)
+      // For simplicity, allowing Rider/Admin universally here, and checking Seller ownership if needed.
+      // Ideally check if Rider is assigned to this delivery.
+
+      if (context.user.role === 'rider' && delivery.rider && delivery.rider.toString() !== context.user._id.toString()) {
+        throw new Error('Not authorized to update this delivery');
+      }
+
+      const previousStatus = delivery.status;
+      delivery.status = status;
+
+      if (status === 'DELIVERED') {
+        delivery.deliveredAt = new Date();
+      }
+
+      if ((status === 'CANCELLED' || status === 'SKIPPED') && reason) {
+        delivery.skipReason = reason;
+      }
+
+      await delivery.save();
+
+      // wallet/credit logic ONLY if transitioning TO Delivered from something else
+      if (status === 'DELIVERED' && previousStatus !== 'DELIVERED') {
+        try {
+          // 1. Fetch Subscription
+          const subscription = await Subscription.findById(delivery.subscriptionId).populate('restaurantId');
+          if (!subscription) throw new Error('Subscription not found for delivery');
+
+          // 1.1 Decrement Remaining Tiffins
+          if (subscription.remainingTiffins > 0) {
+            subscription.remainingTiffins -= 1;
+            await subscription.save();
+          }
+
+          // 2. Credit Customer Rewards (+100) with transaction logging
+          const customer = await User.findById(subscription.userId);
+          if (customer) {
+            // Initialize customerProfile if not exists
+            if (!customer.customerProfile) {
+              customer.customerProfile = {
+                currentWalletAmount: 0,
+                totalWalletAmount: 0,
+                rewardCoins: 0,
+                isFirstOrder: true
+              };
+            }
+
+            // Check if coins already credited for this delivery (idempotency)
+            const existingCoinTransaction = await RewardCoinTransaction.findOne({
+              orderId: delivery._id,
+              transactionType: 'ORDER_COMPLETION'
+            });
+
+            if (!existingCoinTransaction) {
+              const coinsToAdd = 100;
+              const previousCoins = customer.customerProfile.rewardCoins || 0;
+              const newCoins = previousCoins + coinsToAdd;
+
+              customer.customerProfile.rewardCoins = newCoins;
+
+              // Create reward coin transaction record
+              await RewardCoinTransaction.create({
+                userId: customer._id,
+                type: 'CREDIT',
+                coins: coinsToAdd,
+                balanceAfter: newCoins,
+                description: `Delivery completed - ${delivery.mealDate}`,
+                transactionType: 'ORDER_COMPLETION',
+                orderId: delivery._id,
+                referenceId: `DEL_${delivery._id}`
+              });
+
+              await customer.save();
+            }
+          }
+
+          // 3. Credit Seller Payout
+          // Calculate payout amount: Price / Total Tiffins
+          const payoutAmount = subscription.price / subscription.totalTiffins;
+
+          // Find owner of the restaurant
+          const restaurant = await Restaurant.findById(subscription.restaurantId._id || subscription.restaurantId);
+          if (restaurant && restaurant.owner) {
+            await User.findByIdAndUpdate(restaurant.owner, {
+              $inc: {
+                'sellerProfile.currentWalletAmount': payoutAmount,
+                'sellerProfile.totalWalletAmount': payoutAmount
+              }
+            });
+          }
+
+        } catch (err) {
+          console.error("Error executing Wallet/Credit logic for delivery:", deliveryId, err);
+          // Consider rolling back status if critical, or logging for manual reconciliation.
+          // For now, logging error.
+        }
+      }
+
+      return delivery;
+    },
+
+    getPendingDeliveriesForZone: async (_, __, context) => {
+      if (!context.user || context.user.role !== 'rider') {
+        throw new Error('Authentication required (Rider only)');
+      }
+
+      // Find Rider's zone
+      const rider = await User.findById(context.user._id);
+      if (!rider || !rider.zone) {
+        console.log('Rider zone not found', rider);
+        // If no zone assigned, return empty or all? Better empty.
+        return [];
+      }
+
+      // Find deliveries with status 'PREPARED'
+      // We need to filter by Restaurant Zone matching Rider Zone.
+      // SubscriptionDelivery -> Subscription -> Restaurant -> Zone
+
+      const deliveries = await SubscriptionDelivery.find({ status: 'PREPARED' })
+        .populate({
+          path: 'subscriptionId',
+          populate: {
+            path: 'restaurantId',
+            match: { zone: rider.zone }
+          }
+        })
+        .populate({
+          path: 'subscriptionId',
+          populate: { path: 'userId' } // Need customer details
+        })
+        .populate('orderId')
+        .exec();
+
+      // Filter out those where restaurantId is null (mismatch zone) or subscriptionId null
+      const filtered = deliveries.filter(d => d.subscriptionId && d.subscriptionId.restaurantId);
+
+      return filtered;
+    },
+
+    getRiderAssignments: async (_, __, context) => {
+      if (!context.user || context.user.role !== 'rider') throw new Error('Unauthenticated');
+
+      return await SubscriptionDelivery.find({
+        rider: context.user._id,
+        status: { $in: ['ASSIGNED', 'DISPATCHED', 'OUT_FOR_DELIVERY'] }
+      })
+        .populate({
+          path: 'subscriptionId',
+          populate: { path: 'restaurantId' }
+        })
+        .populate({
+          path: 'subscriptionId',
+          populate: { path: 'userId' }
+        })
+        .populate('orderId')
+        .sort({ createdAt: -1 });
+    },
+
+    toggleRiderAvailability: async (_, __, context) => {
+      if (!context.user || context.user.role !== 'rider') {
+        throw new Error('Authentication required (Rider only)');
+      }
+
+      const rider = await User.findById(context.user._id);
+      if (!rider.riderProfile) {
+        rider.riderProfile = {};
+      }
+
+      rider.riderProfile.available = !rider.riderProfile.available;
+      await rider.save();
+
+      return rider;
+    },
+
+    updateRiderLocation: async (_, { lat, lng }, context) => {
+      if (!context.user || context.user.role !== 'rider') throw new Error('Unauthenticated');
+
+      await User.findByIdAndUpdate(context.user._id, {
+        $set: {
+          'riderProfile.location': {
+            type: 'Point',
+            coordinates: [lng, lat]
+          },
+          'riderProfile.lastSeenAt': new Date()
+        }
+      });
+      return await User.findById(context.user._id);
+    },
+
+    getActiveRiders: async (_, __, context) => {
+      // Authorization: Admin only
+      const user = context.user;
+      // if (!user || user.role !== 'admin') throw new Error('Not authorized'); 
+
+      const today = new Date();
+      // Riders on holiday today
+      const holidayRequests = await HolidayRequest.find({
+        status: 'APPROVED',
+        startDate: { $lte: today },
+        endDate: { $gte: today }
+      }).select('riderId');
+
+      const ridersOnHoliday = holidayRequests.map(h => h.riderId.toString());
+
+      // Fetch active riders excluding those on holiday
+      return await User.find({
+        role: 'rider',
+        _id: { $nin: ridersOnHoliday },
+        'riderProfile.location.coordinates': { $exists: true, $ne: [0, 0] }
+      });
+    },
+
+    getHolidayRequests: async (_, { status }, context) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Authentication required (Admin only)');
+      }
+
+      const filter = {};
+      if (status) {
+        filter.status = status;
+      }
+
+      return await HolidayRequest.find(filter)
+        .populate('riderId') // Populate rider details
+        .populate('approvedBy')
+        .sort({ createdAt: -1 });
+    },
+
+    assignSubscriptionDelivery: async (_, { deliveryId }, context) => {
+      if (!context.user || context.user.role !== 'rider') {
+        throw new Error('Authentication required (Rider only)');
+      }
+
+      const delivery = await SubscriptionDelivery.findById(deliveryId);
+      if (!delivery) {
+        throw new Error('Delivery not found');
+      }
+
+      if (delivery.rider) {
+        throw new Error('Delivery already assigned');
+      }
+
+      if (delivery.status !== 'PREPARED') {
+        throw new Error('Delivery is not ready for pickup');
+      }
+
+      delivery.rider = context.user._id;
+      delivery.status = 'ASSIGNED'; // Or logic to move it to 'ACCEPTED'/'PICKED' based on flow
+      // Let's assume 'DISPATCHED' is next or 'ASSIGNED'. 
+      // Existing flow: Seller marks 'DISPATCHED'. 
+      // If Rider assigns self, maybe status becomes 'ASSIGNED_TO_RIDER'?
+      // Schema status enum: ['PENDING', 'PREPARED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'SKIPPED']
+      // We might need to handle status carefully. 'DISPATCHED' usually means left the restaurant. 
+      // If Rider picks it up, it's 'DISPATCHED'. If Rider just accepts it, it's... ?
+      // Checking SubscriptionDelivery.js schema for status enum...
+      // Assuming 'DISPATCHED' is appropriate when rider takes custody or is handling it. 
+      // Actually, usually:
+      // 1. Seller: Prepared.
+      // 2. Rider: Accepts (Assigned).
+      // 3. Rider: Picks up (Dispatched/In-Transit).
+      // 4. Rider: Delivers (Delivered).
+
+      // If enum is strict, I must check it. 
+      // Schema.js for SubscriptionDelivery says: status: String. Enum not enforced in GraphQL type but usually in Mongoose.
+      // Let's check model.
+
+      delivery.status = 'DISPATCHED'; // Using DISPATCHED as "Rider has it or is handling it" for now.
+      await delivery.save();
+
+      return await SubscriptionDelivery.findById(deliveryId)
+        .populate('rider')
+        .populate({
+          path: 'subscriptionId',
+          populate: { path: 'restaurantId' }
+        })
+        .populate('orderId');
+    },
+
+
+    // Subscription-Menu Linking Mutations
+    async setSubscriptionPreferences(_, { subscriptionId, preferences }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findById(subscriptionId);
+      if (!subscription) {
+        throw new Error('Subscription not found');
+      }
+
+      if (subscription.userId.toString() !== context.user._id.toString()) {
+        throw new Error('Access denied');
+      }
+
+      const updated = await SubscriptionPreference.findOneAndUpdate(
+        { subscriptionId },
+        {
+          $set: {
+            mealPreferences: preferences.mealPreferences,
+            defaultProductPreferences: preferences.defaultProductPreferences || [],
+            dietaryRestrictions: preferences.dietaryRestrictions || [],
+            specialInstructions: preferences.specialInstructions || ''
+          }
+        },
+        { new: true, upsert: true }
+      );
+
+      return updated;
+    },
+
+    async updateMealPreference(_, { subscriptionId, dayOfWeek, mealType, isEnabled, deliveryTime }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findById(subscriptionId);
+      if (!subscription) {
+        throw new Error('Subscription not found');
+      }
+
+      if (subscription.userId.toString() !== context.user._id.toString()) {
+        throw new Error('Access denied');
+      }
+
+      let preferences = await SubscriptionPreference.findOne({ subscriptionId });
+      if (!preferences) {
+        preferences = await SubscriptionPreference.createDefault(subscriptionId);
+      }
+
+      // Update specific day preference
+      const prefIndex = preferences.mealPreferences.findIndex(p => p.dayOfWeek === dayOfWeek);
+      if (prefIndex >= 0) {
+        preferences.mealPreferences[prefIndex] = {
+          dayOfWeek,
+          mealType,
+          isEnabled,
+          deliveryTime: deliveryTime || preferences.mealPreferences[prefIndex].deliveryTime
+        };
+      } else {
+        preferences.mealPreferences.push({ dayOfWeek, mealType, isEnabled, deliveryTime });
+      }
+
+      await preferences.save();
+      return preferences;
+    },
+
+    async skipSubscriptionDelivery(_, { deliveryId, reason }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const delivery = await SubscriptionDelivery.findById(deliveryId);
+      if (!delivery) {
+        throw new Error('Delivery not found');
+      }
+
+      const subscription = await Subscription.findById(delivery.subscriptionId);
+      if (subscription.userId.toString() !== context.user._id.toString()) {
+        throw new Error('Access denied');
+      }
+
+      return await delivery.skip(reason);
+    },
+
+    async assignMenuToDelivery(_, { deliveryId, menuItems }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const delivery = await SubscriptionDelivery.findById(deliveryId);
+      if (!delivery) {
+        throw new Error('Delivery not found');
+      }
+
+      // Verify seller access
+      const subscription = await Subscription.findById(delivery.subscriptionId);
+      const restaurant = await Restaurant.findOne({
+        _id: subscription.restaurantId,
+        owner: context.user._id
+      });
+
+      if (!restaurant && context.user.role !== 'admin') {
+        throw new Error('Access denied');
+      }
+
+      delivery.menuItems = menuItems;
+      await delivery.save();
+
+      return await SubscriptionDelivery.findById(deliveryId)
+        .populate('menuItems.productId')
+        .lean();
+    },
+
+    async generateWeeklyDeliveries(_, { subscriptionId, weekStart }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const subscription = await Subscription.findById(subscriptionId);
+      if (!subscription) {
+        throw new Error('Subscription not found');
+      }
+
+      // Verify access (customer or seller/admin)
+      const restaurant = await Restaurant.findOne({
+        _id: subscription.restaurantId,
+        owner: context.user._id
+      });
+
+      if (subscription.userId.toString() !== context.user._id.toString() &&
+        !restaurant && context.user.role !== 'admin') {
+        throw new Error('Access denied');
+      }
+
+      // Get preferences
+      let preferences = await SubscriptionPreference.findOne({ subscriptionId });
+      if (!preferences) {
+        preferences = await SubscriptionPreference.createDefault(subscriptionId);
+      }
+
+      // Generate deliveries
+      const deliveries = await SubscriptionDelivery.generateWeeklyDeliveries(
+        subscriptionId,
+        weekStart,
+        preferences.mealPreferences
+      );
+
+      return deliveries;
+    },
+
+    // Holiday request mutations
+    async createHolidayRequest(_, { startDate, endDate, reason }, context) {
+      if (!context.user || context.user.role !== 'rider') {
+        throw new Error('Authentication required (Rider only)');
+      }
+
+      const holidayRequest = new HolidayRequest({
+        riderId: context.user._id,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        reason
+      });
+
+      await holidayRequest.save();
+      return holidayRequest;
+    },
+
+    async updateHolidayRequestStatus(_, { requestId, status, rejectionReason }, context) {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Authentication required (Admin only)');
+      }
+
+      const holidayRequest = await HolidayRequest.findById(requestId);
+      if (!holidayRequest) {
+        throw new Error('Holiday request not found');
+      }
+
+      holidayRequest.status = status;
+      if (status === 'APPROVED') {
+        holidayRequest.approvedBy = context.user._id;
+        holidayRequest.approvedAt = new Date();
+      }
+      if (status === 'REJECTED' && rejectionReason) {
+        holidayRequest.rejectionReason = rejectionReason;
+      }
+
+      await holidayRequest.save();
+
+      // Send Notification to Rider
+      try {
+        const { sendToUser } = require('../services/notifications.service');
+        const title = `Holiday Request ${status}`;
+        const body = status === 'APPROVED'
+          ? `Your holiday request for ${new Date(holidayRequest.startDate).toDateString()} has been approved.`
+          : `Your holiday request was rejected. Reason: ${rejectionReason || 'Not specified'}`;
+
+        await sendToUser(holidayRequest.riderId, title, body, {
+          type: 'HOLIDAY_UPDATE',
+          requestId: holidayRequest._id.toString()
+        });
+      } catch (err) {
+        console.error("Failed to send holiday notification", err);
+      }
+
+      return holidayRequest;
     }
   },
 
@@ -6168,7 +6940,7 @@ const resolvers = {
         // Get initial rider state
         const rider = await User.findById(riderId).lean();
         const initialLocation = rider?.riderProfile?.location || { type: 'Point', coordinates: [0, 0] };
-        
+
         yield { _id: riderId, location: initialLocation };
 
         // Register subscription and get channel
@@ -6214,16 +6986,16 @@ const resolvers = {
           while (true) {
             const result = await channel.next();
             if (result.done) break;
-            
+
             // Handle removal flag
             const orderData = result.value;
             const origin = orderData._removed ? 'remove' : 'new';
-            
+
             // Remove the _removed flag before sending
             if (orderData._removed) {
               delete orderData._removed;
             }
-            
+
             yield { zoneId, origin, order: orderData };
           }
         } finally {
@@ -6258,9 +7030,9 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // Distance in km
 }

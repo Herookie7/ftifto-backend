@@ -16,15 +16,20 @@ const menuScheduleSchema = new mongoose.Schema(
     dayOfWeek: {
       type: String,
       enum: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
-      required: function() {
+      required: function () {
         return this.scheduleType === 'WEEKLY';
       }
     },
     date: {
       type: Date,
-      required: function() {
+      required: function () {
         return this.scheduleType === 'DAILY';
       }
+    },
+    mealType: {
+      type: String,
+      enum: ['TIFFIN'],
+      default: 'TIFFIN'
     },
     menuItems: [{
       productId: {

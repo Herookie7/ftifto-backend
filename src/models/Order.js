@@ -141,6 +141,11 @@ const orderSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
+    franchise: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Franchise',
+      index: true
+    },
     expectedTime: { type: Date },
     preparationTime: { type: Number },
     acceptedAt: { type: Date },
@@ -161,6 +166,7 @@ orderSchema.index({ restaurant: 1, orderStatus: 1 });
 orderSchema.index({ rider: 1, orderStatus: 1 });
 orderSchema.index({ customer: 1, createdAt: -1 });
 orderSchema.index({ zone: 1 });
+orderSchema.index({ franchise: 1, orderStatus: 1 });
 orderSchema.index({ 'deliveryAddress.location': '2dsphere' });
 
 module.exports = mongoose.model('Order', orderSchema);

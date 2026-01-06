@@ -15,13 +15,15 @@ const alerts = require('./src/services/alerts.service');
 const startMetricsPush = require('./src/services/metricsPush.service');
 const maintenanceService = require('./src/services/maintenance.service');
 const secretsProvider = require('./src/config/secretsProvider');
+const { generateWeeklyDeliveriesJob } = require('./src/cron/subscriptionCron'); // Import Cron
+
 
 const startServer = async () => {
   const server = http.createServer(app);
-  
+
   // Start server listening first (but don't accept connections until ready)
   const PORT = process.env.PORT || 8001;
-  
+
   // Wait for GraphQL to initialize after server is created (so we can pass it for subscriptions)
   // This ensures Apollo Server middleware is registered and subscriptions are configured
   const { initializeGraphQL } = require('./src/app');
@@ -31,13 +33,17 @@ const startServer = async () => {
   } catch (error) {
     logger.warn('GraphQL initialization failed, but continuing server start', { error: error.message });
   }
-  
+
   // Now start accepting connections
   server.listen(PORT, '0.0.0.0', () => {
     logger.info(`🚀 Server running on port ${PORT}`);
     console.log(`🚀 Server running on port ${PORT}`);
+
+    // Start Cron Jobs
+    generateWeeklyDeliveriesJob.start();
+    logger.info('Weekly subscription delivery generation cron job started');
   });
-  
+
   server.on('error', (error) => {
     logger.error('Server error', { error: error.message, code: error.code });
     if (error.code === 'EADDRINUSE') {
@@ -55,20 +61,20 @@ const startServer = async () => {
     // Don't exit - let the server continue running
     // The app can handle DB connection errors gracefully
   });
-  
+
   // Initialize other services (non-blocking)
   try {
     initializeRealtime(server);
   } catch (error) {
     logger.warn('Failed to initialize realtime server', { error: error.message });
   }
-  
+
   try {
     initializeFirebase();
   } catch (error) {
     logger.warn('Failed to initialize Firebase', { error: error.message });
   }
-  
+
   try {
     startMetricsPush();
   } catch (error) {
@@ -156,7 +162,7 @@ const startServer = async () => {
 const startCluster = () => {
   // Disable cluster mode on Render - Render handles scaling
   const shouldUseCluster = config.cluster.enabled && !config.app.isRender && cluster.isPrimary;
-  
+
   if (!shouldUseCluster) {
     startServer().catch((error) => {
       logger.error('Failed to start server', { error: error.message, stack: error.stack });

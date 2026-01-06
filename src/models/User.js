@@ -97,7 +97,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['customer', 'seller', 'rider', 'admin'],
+      enum: ['customer', 'seller', 'rider', 'admin', 'franchise-admin', 'super-admin'],
       default: 'customer'
     },
     avatar: { type: String, trim: true },
@@ -114,6 +114,11 @@ const userSchema = new mongoose.Schema(
     userType: { type: String, trim: true }, // 'apple', 'google', 'facebook', 'email', 'phone'
     notificationToken: { type: String, trim: true },
     zone: { type: mongoose.Schema.Types.ObjectId, ref: 'Zone' },
+    franchise: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Franchise',
+      index: true
+    },
     metadata: {
       type: mongoose.Schema.Types.Mixed
     },
