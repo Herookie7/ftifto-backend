@@ -4488,6 +4488,30 @@ const resolvers = {
       return true;
     },
 
+    async cancelRiderWithdrawRequest(_, { id }, context) {
+      if (!context.user || context.user.userType !== 'rider') {
+        throw new Error('Authentication required');
+      }
+
+      const withdrawRequest = await WithdrawRequest.findOne({
+        _id: id,
+        userId: context.user._id
+      });
+
+      if (!withdrawRequest) {
+        throw new Error('Withdraw request not found');
+      }
+
+      if (withdrawRequest.status !== 'REQUESTED') {
+        throw new Error('You can only cancel pending withdraw requests');
+      }
+
+      withdrawRequest.status = 'CANCELLED';
+      await withdrawRequest.save();
+
+      return withdrawRequest;
+    },
+
     async abortOrder(_, { id }, context) {
       if (!context.user) {
         throw new Error('Authentication required');

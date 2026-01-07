@@ -1498,6 +1498,7 @@ const typeDefs = gql`
     ownerLogin(email: String!, password: String!): OwnerLoginResponse
     riderLogin(username: String, password: String, notificationToken: String, timeZone: String!): LoginResponse
     createRiderWithdrawRequest(requestAmount: Float!): WithdrawRequest
+    cancelRiderWithdrawRequest(id: ID!): WithdrawRequest
     createUser(userInput: CreateUserInput!): AuthResponse
     verifyOtp(otp: String!, email: String, phone: String): VerifyOtpResponse
     sendOtpToEmail(email: String!): ResultResponse
