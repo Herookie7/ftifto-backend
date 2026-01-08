@@ -4757,7 +4757,8 @@ const resolvers = {
         title: couponInput.title,
         code: couponInput.code,
         discount: couponInput.discount,
-        enabled: couponInput.enabled !== undefined ? couponInput.enabled : true
+        enabled: couponInput.enabled !== undefined ? couponInput.enabled : true,
+        minOrderAmount: couponInput.minOrderAmount || 0
       });
 
       await coupon.save();
@@ -4786,6 +4787,7 @@ const resolvers = {
       if (couponInput.code !== undefined) coupon.code = couponInput.code;
       if (couponInput.discount !== undefined) coupon.discount = couponInput.discount;
       if (couponInput.enabled !== undefined) coupon.enabled = couponInput.enabled;
+      if (couponInput.minOrderAmount !== undefined) coupon.minOrderAmount = couponInput.minOrderAmount;
 
       await coupon.save();
       return coupon.toObject();
@@ -5275,15 +5277,15 @@ const resolvers = {
 
       // Create transaction record
       const transaction = new WalletTransaction({
-        user: user._id,
+        userId: user._id,
+        userType: 'CUSTOMER', // Assuming only customers use this
         amount: amount,
         type: 'CREDIT',
-        paymentMethod: 'RAZORPAY',
-        paymentId: paymentId,
-        orderId: orderId,
-        status: 'SUCCESS',
-        description: 'Wallet top-up via Razorpay',
-        date: new Date()
+        transactionType: 'TOP_UP',
+        balanceAfter: user.customerProfile.currentWalletAmount,
+        status: 'COMPLETED',
+        description: `Wallet top-up via Razorpay (Payment ID: ${paymentId})`,
+        referenceId: paymentId
       });
 
       await transaction.save();

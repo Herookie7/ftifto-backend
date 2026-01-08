@@ -539,6 +539,7 @@ const typeDefs = gql`
     discount: Float
     enabled: Boolean
     code: String
+    minOrderAmount: Float
   }
 
   input CouponInput {
@@ -547,6 +548,7 @@ const typeDefs = gql`
     discount: Float!
     enabled: Boolean
     code: String
+    minOrderAmount: Float
   }
 
   type ChatMessage {
