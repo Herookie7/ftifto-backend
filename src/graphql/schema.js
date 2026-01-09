@@ -339,6 +339,14 @@ const typeDefs = gql`
     isRiderRinged: Boolean
     zone: Zone
     franchise: Franchise
+    razorpayOrder: RazorpayOrder
+  }
+
+  type RazorpayOrder {
+       id: String
+       amount: Float
+       currency: String
+       receipt: String
   }
 
   type Configuration {
