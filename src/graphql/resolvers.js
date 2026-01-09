@@ -5275,17 +5275,24 @@ const resolvers = {
 
       await user.save();
 
+      console.log('VerifyRazorpayPayment: Creating WalletTransaction', {
+        userId: user._id,
+        amount,
+        balanceAfter: user.customerProfile.currentWalletAmount,
+        paymentId
+      });
+
       // Create transaction record
       const transaction = new WalletTransaction({
         userId: user._id,
-        userType: 'CUSTOMER', // Assuming only customers use this
+        userType: 'CUSTOMER',
         amount: amount,
         type: 'CREDIT',
         transactionType: 'TOP_UP',
         balanceAfter: user.customerProfile.currentWalletAmount,
         status: 'COMPLETED',
         description: `Wallet top-up via Razorpay (Payment ID: ${paymentId})`,
-        referenceId: paymentId
+        referenceId: orderId // Store Razorpay Order ID here for reference
       });
 
       await transaction.save();

@@ -1,4 +1,5 @@
-const fetch = require('node-fetch');
+// Fix for node-fetch v3 in CommonJS
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const Configuration = require('../models/Configuration');
 const logger = require('../logger');
 const auditLogger = require('../services/auditLogger');
@@ -175,7 +176,7 @@ const sendOTP = async (phoneNumber, otp, template = null) => {
   try {
     // Use transactional route for OTP (route 't')
     const result = await sendSMS(phoneNumber, message, { route: 't' });
-    
+
     if (result.success) {
       auditLogger.logEvent({
         category: 'sms',
