@@ -141,6 +141,7 @@ const typeDefs = gql`
     notificationToken: String
     enableNotification: Boolean
     deliveryBounds: Location
+    isSubscriptionAvailable: Boolean
     owner: User
     bussinessDetails: BussinessDetails
     totalWalletAmount: Float
@@ -1783,6 +1784,7 @@ const typeDefs = gql`
     deliveryCharges: Float
     location: [Float]
     isPinned: Boolean
+    isSubscriptionAvailable: Boolean
   }
 
   input CuisineInput {

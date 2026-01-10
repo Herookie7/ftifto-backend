@@ -112,6 +112,7 @@ const restaurantSchema = new mongoose.Schema(
     restaurantUrl: { type: String, trim: true },
     stripeDetailsSubmitted: { type: Boolean, default: false },
     enableNotification: { type: Boolean, default: true },
+    isSubscriptionAvailable: { type: Boolean, default: false },
     username: { type: String, trim: true },
     password: { type: String, trim: true },
     categories: [

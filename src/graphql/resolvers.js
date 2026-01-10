@@ -20,6 +20,7 @@ const HolidayRequest = require('../models/HolidayRequest');
 const Franchise = require('../models/Franchise');
 const SubscriptionPreference = require('../models/SubscriptionPreference');
 const SubscriptionDelivery = require('../models/SubscriptionDelivery');
+const RewardCoinTransaction = require('../models/RewardCoinTransaction');
 const { signToken } = require('../utils/token');
 const logger = require('../logger');
 const { addFranchiseScope, getFranchiseForCreation, validateFranchiseMatch } = require('../middleware/franchiseScope');
@@ -4043,6 +4044,8 @@ const resolvers = {
       if (!customer) {
         throw new Error('Customer not found');
       }
+      const configuration = await Configuration.findOne({});
+      const currencySymbol = configuration?.currencySymbol;
 
       // Initialize customerProfile if not exists
       if (!customer.customerProfile) {
@@ -5996,6 +5999,7 @@ const resolvers = {
       if (restaurantInput.deliveryTime !== undefined) restaurant.deliveryTime = restaurantInput.deliveryTime;
       if (restaurantInput.minimumOrder !== undefined) restaurant.minimumOrder = restaurantInput.minimumOrder;
       if (restaurantInput.deliveryCharges !== undefined) restaurant.deliveryCharges = restaurantInput.deliveryCharges;
+      if (restaurantInput.isSubscriptionAvailable !== undefined) restaurant.isSubscriptionAvailable = restaurantInput.isSubscriptionAvailable;
 
       // Update location coordinates if provided
       if (restaurantInput.location !== undefined && Array.isArray(restaurantInput.location)) {
