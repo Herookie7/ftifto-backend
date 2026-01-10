@@ -2606,16 +2606,16 @@ const resolvers = {
       };
     },
 
-    async getSubscriptionPlans(_, __, context) {
-      // Define subscription plans
-      const plans = [
+    async getSubscriptionPlans(_, { restaurantId }, context) {
+      // Define base subscription plans
+      const basePlans = [
         {
           _id: '7_DAYS',
           planType: '7_DAYS',
           planName: '7 Days Plan',
           duration: 7,
-          totalTiffins: 14, // 2 tiffins per day
-          price: 0, // Price to be set by admin
+          totalTiffins: 14,
+          price: 0,
           description: '7 days subscription with 14 tiffins',
           isActive: true
         },
@@ -2624,7 +2624,7 @@ const resolvers = {
           planType: '15_DAYS',
           planName: '15 Days Plan',
           duration: 15,
-          totalTiffins: 30, // 2 tiffins per day
+          totalTiffins: 30,
           price: 0,
           description: '15 days subscription with 30 tiffins',
           isActive: true
@@ -2634,7 +2634,7 @@ const resolvers = {
           planType: '1_MONTH',
           planName: '1 Month Plan',
           duration: 30,
-          totalTiffins: 60, // 2 tiffins per day
+          totalTiffins: 60,
           price: 0,
           description: '1 month subscription with 60 tiffins',
           isActive: true
@@ -2661,23 +2661,28 @@ const resolvers = {
         }
       ];
 
-      return plans;
+      // If restaurantId provided, fetch restaurant-specific pricing
+      if (restaurantId) {
+        const restaurant = await Restaurant.findById(restaurantId).lean();
+        if (restaurant && restaurant.subscriptionPricing) {
+          return basePlans.map(plan => ({
+            ...plan,
+            price: restaurant.subscriptionPricing.get(plan.planType) || 0
+          }));
+        }
+      }
+
+      return basePlans;
     },
 
     // Menu schedule queries
     async getMenuSchedules(_, { restaurantId, scheduleType }, context) {
-      if (!context.user) {
-        throw new Error('Authentication required');
-      }
+      // Allow public access for customers to view menus
+      // No authentication required anymore
 
-      // Verify user owns the restaurant
-      const restaurant = await Restaurant.findOne({
-        _id: restaurantId,
-        owner: context.user._id
-      });
-
+      const restaurant = await Restaurant.findById(restaurantId);
       if (!restaurant) {
-        throw new Error('Restaurant not found or access denied');
+        throw new Error('Restaurant not found');
       }
 
       const query = { restaurantId: restaurant._id, isActive: true };
@@ -6026,6 +6031,36 @@ const resolvers = {
         message: 'Restaurant information updated successfully',
         data: restaurant
       };
+    },
+
+    async updateRestaurantSubscriptionPricing(_, { restaurantId, pricing }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      // Verify ownership
+      const restaurant = await Restaurant.findOne({
+        _id: restaurantId,
+        owner: context.user._id
+      });
+
+      if (!restaurant) {
+        throw new Error('Restaurant not found or access denied');
+      }
+
+      // Update subscription pricing
+      if (!restaurant.subscriptionPricing) {
+        restaurant.subscriptionPricing = new Map();
+      }
+
+      // Merge pricing updates
+      for (const [planType, price] of Object.entries(pricing)) {
+        restaurant.subscriptionPricing.set(planType, price);
+      }
+
+      await restaurant.save();
+
+      return restaurant;
     },
 
     async toggleRestaurantPin(_, { restaurantId, isPinned, pinDurationDays }, context) {

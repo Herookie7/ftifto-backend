@@ -113,6 +113,17 @@ const restaurantSchema = new mongoose.Schema(
     stripeDetailsSubmitted: { type: Boolean, default: false },
     enableNotification: { type: Boolean, default: true },
     isSubscriptionAvailable: { type: Boolean, default: false },
+    subscriptionPricing: {
+      type: Map,
+      of: Number,
+      default: () => new Map([
+        ['7_DAYS', 0],
+        ['15_DAYS', 0],
+        ['1_MONTH', 0],
+        ['2_MONTHS', 0],
+        ['3_MONTHS', 0]
+      ])
+    },
     username: { type: String, trim: true },
     password: { type: String, trim: true },
     categories: [

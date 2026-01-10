@@ -142,6 +142,7 @@ const typeDefs = gql`
     enableNotification: Boolean
     deliveryBounds: Location
     isSubscriptionAvailable: Boolean
+    subscriptionPricing: JSON
     owner: User
     bussinessDetails: BussinessDetails
     totalWalletAmount: Float
@@ -1457,7 +1458,7 @@ const typeDefs = gql`
     
     # Subscription queries
     getUserSubscription: Subscription
-    getSubscriptionPlans: [SubscriptionPlan]
+    getSubscriptionPlans(restaurantId: ID): [SubscriptionPlan]
 
     # Menu schedule queries (Seller app)
     getMenuSchedules(restaurantId: ID!, scheduleType: String): [MenuSchedule]
@@ -1564,6 +1565,7 @@ const typeDefs = gql`
     updateRiderVehicleDetails(id: String!, vehicleDetails: VehicleDetailsInput): User
     updateRestaurantBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): UpdateRestaurantResponse
     updateRestaurantInfo(id: String!, restaurantInput: RestaurantInfoInput!): UpdateRestaurantResponse
+    updateRestaurantSubscriptionPricing(restaurantId: ID!, pricing: JSON!): Restaurant
     toggleRestaurantPin(restaurantId: String!, isPinned: Boolean!, pinDurationDays: Int): Restaurant
     createCategory(restaurantId: ID!, title: String!, description: String, image: String, order: Int): Category
     updateCategory(id: ID!, title: String, description: String, image: String, order: Int, isActive: Boolean): Category
