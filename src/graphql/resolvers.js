@@ -4203,9 +4203,18 @@ const resolvers = {
               }
             }
           );
+          logger.info('Razorpay order created successfully', {
+            razorpayOrderId: razorpayOrder?.id,
+            amount: orderAmount
+          });
         } catch (error) {
-          logger.error('Failed to create Razorpay order', { error: error.message, orderAmount });
-          throw new Error('Failed to initialize payment. Please try again or use a different payment method.');
+          logger.error('Failed to create Razorpay order', {
+            error: error.message,
+            stack: error.stack,
+            orderAmount,
+            currency: (await Configuration.getConfiguration())?.currency
+          });
+          throw new Error(`Failed to initialize payment: ${error.message}. Please try again or use a different payment method.`);
         }
       }
 
