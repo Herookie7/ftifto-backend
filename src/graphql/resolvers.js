@@ -5113,7 +5113,9 @@ const resolvers = {
       }
 
       // Verify user is admin or the owner themselves
-      if (context.user.role !== 'admin' && context.user._id.toString() !== owner.toString()) {
+      const allowedAdminRoles = ['admin', 'super-admin', 'franchise-admin'];
+      const isAdmin = allowedAdminRoles.includes(context.user.role);
+      if (!isAdmin && context.user._id.toString() !== owner.toString()) {
         throw new Error('Unauthorized to create restaurant for this owner');
       }
 
