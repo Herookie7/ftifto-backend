@@ -6175,6 +6175,102 @@ const resolvers = {
       };
     },
 
+    async updateDeliveryBoundsAndLocation(_, { id, boundType, bounds, circleBounds, location, address, postCode, city }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const allowedAdminRoles = ['admin', 'super-admin', 'franchise-admin'];
+      const isAdmin = allowedAdminRoles.includes(context.user.role);
+
+      const restaurant = await Restaurant.findById(id);
+      if (!restaurant) {
+        throw new Error('Restaurant not found');
+      }
+
+      // Check authorization
+      if (!isAdmin && restaurant.owner.toString() !== context.user._id.toString()) {
+        throw new Error('Unauthorized to update this restaurant');
+      }
+
+      // Update location (required)
+      restaurant.location = {
+        type: 'Point',
+        coordinates: [location.longitude, location.latitude]
+      };
+
+      // Update address fields if provided
+      if (address !== undefined) restaurant.address = address;
+      if (postCode !== undefined) restaurant.postCode = postCode;
+      if (city !== undefined) restaurant.city = city;
+
+      // Update delivery bounds based on type
+      if (boundType === 'circle' && circleBounds) {
+        // For circle bounds, create a circular polygon approximation
+        const { center, radius } = circleBounds;
+        const numPoints = 32; // Number of points to approximate circle
+        const coordinates = [];
+
+        for (let i = 0; i <= numPoints; i++) {
+          const angle = (i * 360) / numPoints;
+          const lat = center.latitude + (radius / 111000) * Math.cos((angle * Math.PI) / 180);
+          const lng = center.longitude + (radius / (111000 * Math.cos((center.latitude * Math.PI) / 180))) * Math.sin((angle * Math.PI) / 180);
+          coordinates.push([lng, lat]);
+        }
+
+        restaurant.deliveryBounds = {
+          type: 'Polygon',
+          coordinates: [coordinates]
+        };
+      } else if (boundType === 'polygon' && bounds) {
+        // For polygon bounds, use provided coordinates
+        restaurant.deliveryBounds = {
+          type: 'Polygon',
+          coordinates: bounds
+        };
+      }
+
+      await restaurant.save();
+
+      return {
+        success: true,
+        message: 'Delivery bounds and location updated successfully',
+        data: restaurant
+      };
+    },
+
+    async updateRestaurantDelivery(_, { id, minDeliveryFee, deliveryDistance, deliveryFee }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const allowedAdminRoles = ['admin', 'super-admin', 'franchise-admin'];
+      const isAdmin = allowedAdminRoles.includes(context.user.role);
+
+      const restaurant = await Restaurant.findById(id);
+      if (!restaurant) {
+        throw new Error('Restaurant not found');
+      }
+
+      // Check authorization
+      if (!isAdmin && restaurant.owner.toString() !== context.user._id.toString()) {
+        throw new Error('Unauthorized to update this restaurant');
+      }
+
+      // Update delivery settings
+      if (minDeliveryFee !== undefined) restaurant.minDeliveryFee = minDeliveryFee;
+      if (deliveryDistance !== undefined) restaurant.deliveryDistance = deliveryDistance;
+      if (deliveryFee !== undefined) restaurant.deliveryCharges = deliveryFee;
+
+      await restaurant.save();
+
+      return {
+        success: true,
+        message: 'Restaurant delivery settings updated successfully',
+        data: restaurant
+      };
+    },
+
     async updateRestaurantSubscriptionPricing(_, { restaurantId, pricing }, context) {
       if (!context.user) {
         throw new Error('Authentication required');

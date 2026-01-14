@@ -1571,6 +1571,8 @@ const typeDefs = gql`
     updateRestaurantBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): UpdateRestaurantResponse
     updateRestaurantInfo(id: String!, restaurantInput: RestaurantInfoInput!): UpdateRestaurantResponse
     updateRestaurantSubscriptionPricing(restaurantId: ID!, pricing: JSON!): Restaurant
+    updateDeliveryBoundsAndLocation(id: ID!, boundType: String!, bounds: [[[Float!]]], circleBounds: CircleBoundsInput, location: CoordinatesInput!, address: String, postCode: String, city: String): UpdateRestaurantResponse
+    updateRestaurantDelivery(id: ID!, minDeliveryFee: Float, deliveryDistance: Float, deliveryFee: Float): UpdateRestaurantResponse
     toggleRestaurantPin(restaurantId: String!, isPinned: Boolean!, pinDurationDays: Int): Restaurant
     createCategory(restaurantId: ID!, title: String!, description: String, image: String, order: Int): Category
     updateCategory(id: ID!, title: String, description: String, image: String, order: Int, isActive: Boolean): Category
@@ -1694,6 +1696,16 @@ const typeDefs = gql`
   input LocationInput {
     type: String
     coordinates: JSON
+  }
+
+  input CoordinatesInput {
+    latitude: Float!
+    longitude: Float!
+  }
+
+  input CircleBoundsInput {
+    center: CoordinatesInput!
+    radius: Float!
   }
 
   input OrderInput {
