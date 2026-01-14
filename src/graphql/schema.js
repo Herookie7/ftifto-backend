@@ -1516,6 +1516,11 @@ const typeDefs = gql`
     sendOtpToEmail(email: String!): ResultResponse
     sendOtpToPhoneNumber(phone: String!): ResultResponse
 
+    # Vendor management mutations
+    createVendor(vendorInput: VendorInput): User
+    editVendor(vendorInput: VendorInput): User
+    deleteVendor(id: String!): Boolean
+
     # User management mutations
     emailExist(email: String!): UserExistResponse
     phoneExist(phone: String!): UserExistResponse
@@ -1663,6 +1668,18 @@ const typeDefs = gql`
     emailIsVerified: Boolean
     isPhoneExists: Boolean
     referralCode: String
+  }
+
+  input VendorInput {
+    _id: ID
+    email: String
+    password: String
+    name: String
+    image: String
+    phone: String
+    phoneNumber: String
+    firstName: String
+    lastName: String
   }
 
   input AddressInput {

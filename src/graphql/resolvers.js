@@ -3752,6 +3752,113 @@ const resolvers = {
       throw new Error('Invalid OTP');
     },
 
+    // Vendor Management Mutations
+    async createVendor(_, { vendorInput }, context) {
+      console.log('📝 createVendor called:', { vendorInput, hasContext: !!context, hasUser: !!context?.user });
+
+      const { email, password, name, image, phone, phoneNumber } = vendorInput;
+
+      // Validate required fields
+      if (!email || !password || !name) {
+        throw new Error('Email, password, and name are required');
+      }
+
+      // Check if vendor already exists
+      const existingVendor = await User.findOne({
+        $or: [{ email }, { phone: phone || phoneNumber }]
+      });
+
+      if (existingVendor) {
+        throw new Error('Vendor with this email or phone already exists');
+      }
+
+      // Create new vendor (seller)
+      const vendor = await User.create({
+        name,
+        email,
+        phone: phone || phoneNumber,
+        password,
+        role: 'seller',
+        image,
+        userType: 'email',
+        emailIsVerified: true,
+        phoneIsVerified: !!phone || !!phoneNumber,
+        isActive: true
+      });
+
+      auditLogger.logEvent({
+        category: 'vendor',
+        action: 'create',
+        userId: vendor._id.toString(),
+        adminId: context?.user?._id?.toString(),
+        details: `Vendor created: ${email}`
+      });
+
+      console.log('✅ Vendor created:', { id: vendor._id, email: vendor.email });
+      return vendor;
+    },
+
+    async editVendor(_, { vendorInput }, context) {
+      console.log('✏️ editVendor called:', { vendorInput, hasContext: !!context, hasUser: !!context?.user });
+
+      const { _id, email, password, name, image, phone, phoneNumber } = vendorInput;
+
+      if (!_id) {
+        throw new Error('Vendor ID is required for editing');
+      }
+
+      const vendor = await User.findById(_id);
+      if (!vendor) {
+        throw new Error('Vendor not found');
+      }
+
+      // Update fields
+      if (name) vendor.name = name;
+      if (email) vendor.email = email;
+      if (image) vendor.image = image;
+      if (phone || phoneNumber) vendor.phone = phone || phoneNumber;
+      if (password) vendor.password = password; // Will be hashed by pre-save hook
+
+      await vendor.save();
+
+      auditLogger.logEvent({
+        category: 'vendor',
+        action: 'edit',
+        userId: vendor._id.toString(),
+        adminId: context?.user?._id?.toString(),
+        details: `Vendor updated: ${email || vendor.email}`
+      });
+
+      console.log('✅ Vendor updated:', { id: vendor._id, email: vendor.email });
+      return vendor;
+    },
+
+    async deleteVendor(_, { id }, context) {
+      console.log('❌ deleteVendor called:', { id, hasContext: !!context, hasUser: !!context?.user });
+
+      const vendor = await User.findById(id);
+      if (!vendor) {
+        throw new Error('Vendor not found');
+      }
+
+      if (vendor.role !== 'seller') {
+        throw new Error('User is not a vendor');
+      }
+
+      await User.findByIdAndDelete(id);
+
+      auditLogger.logEvent({
+        category: 'vendor',
+        action: 'delete',
+        userId: id,
+        adminId: context?.user?._id?.toString(),
+        details: `Vendor deleted: ${vendor.email}`
+      });
+
+      console.log('✅ Vendor deleted:', { id, email: vendor.email });
+      return true;
+    },
+
     async sendOtpToEmail(_, { email }) {
       // Get test OTP from configuration
       const configDoc = await Configuration.getConfiguration();
