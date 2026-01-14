@@ -6205,7 +6205,7 @@ const resolvers = {
       if (city !== undefined) restaurant.city = city;
 
       // Update delivery bounds based on type
-      if (boundType === 'circle' && circleBounds) {
+      if ((boundType === 'circle' || boundType === 'radius') && circleBounds) {
         // For circle bounds, create a circular polygon approximation
         const { center, radius } = circleBounds;
         const numPoints = 32; // Number of points to approximate circle
