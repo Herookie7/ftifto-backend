@@ -4722,7 +4722,12 @@ const resolvers = {
       return { result: 'success' };
     },
 
-    async resetPassword(_, { password, email }) {
+    async resetPassword(_, { password, email }, context) {
+      // Require admin authentication for password resets
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Only administrators can reset user passwords');
+      }
+
       const user = await User.findOne({ email });
       if (!user) {
         throw new Error('User not found');
@@ -4733,8 +4738,10 @@ const resolvers = {
 
       auditLogger.logEvent({
         category: 'auth',
-        action: 'password_reset',
-        userId: user._id.toString()
+        action: 'password_reset_by_admin',
+        userId: user._id.toString(),
+        adminId: context.user._id.toString(),
+        details: `Admin ${context.user.email} reset password for user ${user.email}`
       });
 
       return { result: 'success' };
