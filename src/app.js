@@ -315,6 +315,12 @@ const initializeGraphQL = async (server) => {
         // Query/Mutation context
         const token = req?.headers?.authorization?.split(' ')[1] || null;
 
+        console.log('🔍 GraphQL Context Setup:', {
+          hasToken: !!token,
+          tokenPreview: token ? token.substring(0, 30) + '...' : null,
+          operation: req?.body?.operationName
+        });
+
         if (!token) {
           return { user: null };
         }
@@ -322,21 +328,39 @@ const initializeGraphQL = async (server) => {
         try {
           const { verifyToken } = require('./utils/token');
           const decoded = verifyToken(token);
+
+          console.log('✅ Token decoded:', {
+            userId: decoded?.id,
+            role: decoded?.role
+          });
+
           const User = require('./models/User');
           const user = await User.findById(decoded.id);
 
+          console.log('👤 User lookup result:', {
+            found: !!user,
+            userId: user?._id?.toString(),
+            role: user?.role,
+            email: user?.email,
+            isActive: user?.isActive
+          });
+
           if (!user) {
+            console.log('❌ User not found for decoded token ID:', decoded.id);
             return { user: null };
           }
 
           if (user.isActive === false) {
             logger.warn('Inactive user attempted GraphQL operation', { userId: user._id.toString() });
+            console.log('⚠️ User is inactive');
             return { user: null };
           }
 
+          console.log('✅ Context user set successfully');
           return { user };
         } catch (error) {
           logger.warn('Invalid token in GraphQL context', { error: error.message });
+          console.log('❌ Token verification error:', error.message);
           return { user: null };
         }
       },
