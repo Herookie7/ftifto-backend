@@ -4724,7 +4724,7 @@ const resolvers = {
 
     async resetPassword(_, { password, email }, context) {
       // Require admin authentication for password resets
-      if (!context.user || context.user.role !== 'admin') {
+      if (!context.user || (context.user.role !== 'admin' && context.user.role !== 'super-admin')) {
         throw new Error('Only administrators can reset user passwords');
       }
 
