@@ -4723,8 +4723,24 @@ const resolvers = {
     },
 
     async resetPassword(_, { password, email }, context) {
+      // Log for debugging
+      console.log('🔑 resetPassword called:', {
+        email,
+        hasContext: !!context,
+        hasUser: !!context?.user,
+        userId: context?.user?._id,
+        userRole: context?.user?.role,
+        userEmail: context?.user?.email
+      });
+
       // Require admin authentication for password resets
-      if (!context.user || (context.user.role !== 'admin' && context.user.role !== 'super-admin')) {
+      const allowedRoles = ['admin', 'super-admin', 'franchise-admin'];
+      if (!context.user || !allowedRoles.includes(context.user.role)) {
+        console.log('❌ Authorization failed:', {
+          hasUser: !!context.user,
+          role: context?.user?.role,
+          allowedRoles
+        });
         throw new Error('Only administrators can reset user passwords');
       }
 
@@ -4744,6 +4760,7 @@ const resolvers = {
         details: `Admin ${context.user.email} reset password for user ${user.email}`
       });
 
+      console.log('✅ Password reset successful for:', email);
       return { result: 'success' };
     },
 
