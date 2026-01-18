@@ -174,8 +174,15 @@ const sendOTP = async (phoneNumber, otp, template = null) => {
   });
 
   try {
-    // Use transactional route for OTP (route 't')
-    const result = await sendSMS(phoneNumber, message, { route: 't' });
+    // Get configured route from admin settings
+    // Route options: 'q' = Quick, 'd' = Promotional, 't' = Transactional
+    // Admin can configure the route in Fast2SMS settings
+    // If route is not configured in database, getFast2SMSConfig defaults to 'q', but we prefer 't' for OTP
+    const config = await getFast2SMSConfig();
+    // Use admin-configured route, or default to transactional ('t') for OTP if somehow not set
+    const route = config.route && ['q', 'd', 't'].includes(config.route) ? config.route : 't';
+    
+    const result = await sendSMS(phoneNumber, message, { route });
 
     if (result.success) {
       auditLogger.logEvent({

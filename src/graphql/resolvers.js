@@ -3733,11 +3733,44 @@ const resolvers = {
     },
 
     async verifyOtp(_, { otp, email, phone }) {
-      // Get test OTP from configuration
+      const { verifyOTP } = require('../services/otpStorage.service');
       const configDoc = await Configuration.getConfiguration();
       const testOtp = configDoc.testOtp || '123456';
 
-      // For now, use test OTP if configured, otherwise validate
+      // Determine the key and type for OTP verification
+      let key = null;
+      let type = null;
+
+      if (email) {
+        key = email;
+        type = 'email';
+      } else if (phone) {
+        key = phone;
+        type = 'phone';
+      } else {
+        throw new Error('Either email or phone must be provided');
+      }
+
+      // First, try to verify using stored OTP (check both specific type and password_reset for email)
+      let isValidStoredOTP = verifyOTP(key, otp, type);
+      
+      // For email, also check password_reset type (used in forgot password flow)
+      if (!isValidStoredOTP && email) {
+        isValidStoredOTP = verifyOTP(key, otp, 'password_reset');
+      }
+
+      if (isValidStoredOTP) {
+        // Update user verification status
+        if (email) {
+          await User.findOneAndUpdate({ email }, { emailIsVerified: true });
+        } else if (phone) {
+          await User.findOneAndUpdate({ phone }, { phoneIsVerified: true });
+        }
+        logger.info('OTP verified successfully', { key: key.replace(/\d(?=\d{4})/g, '*'), type });
+        return { result: 'success' };
+      }
+
+      // Fallback to test OTP for backward compatibility (if configured)
       if (testOtp && otp === testOtp) {
         // Update user verification status
         if (email) {
@@ -3745,10 +3778,12 @@ const resolvers = {
         } else if (phone) {
           await User.findOneAndUpdate({ phone }, { phoneIsVerified: true });
         }
+        logger.info('OTP verified using test OTP', { key: key.replace(/\d(?=\d{4})/g, '*'), type });
         return { result: 'success' };
       }
 
-      // In production, implement proper OTP verification
+      // OTP is invalid
+      logger.warn('Invalid OTP provided', { key: key.replace(/\d(?=\d{4})/g, '*'), type });
       throw new Error('Invalid OTP');
     },
 
@@ -3860,13 +3895,68 @@ const resolvers = {
     },
 
     async sendOtpToEmail(_, { email }) {
-      // Get test OTP from configuration
       const configDoc = await Configuration.getConfiguration();
+      const skipEmailVerification = configDoc.skipEmailVerification;
       const testOtp = configDoc.testOtp || '123456';
 
-      // In production, send actual OTP via email service
-      // For now, return success (OTP would be sent via email service)
+      // If email verification is skipped, return success immediately
+      if (skipEmailVerification) {
+        return { result: 'success', otp: testOtp };
+      }
+
+      // Find user by email to get their phone number
+      const user = await User.findOne({ email });
+      
+      if (!user) {
+        // Don't reveal if user exists for security
       return { result: 'success' };
+      }
+
+      // Check if user has phone number
+      if (!user.phone) {
+        throw new Error('User does not have a phone number. Please use phone OTP instead.');
+      }
+
+      // Check if Fast2SMS is enabled and configured
+      const { sendOTP, isConfigured } = require('../services/fast2sms.service');
+      const { generateOTP, storeOTP } = require('../services/otpStorage.service');
+
+      try {
+        if (await isConfigured()) {
+          // Generate 6-digit OTP
+          const otp = generateOTP();
+
+          // Store OTP for verification (using email as key)
+          storeOTP(email, otp, 'email');
+
+          // Send OTP via Fast2SMS to user's phone
+          const result = await sendOTP(user.phone, otp);
+
+          if (result.success) {
+            logger.info('Email OTP sent via Fast2SMS to phone', { 
+              email, 
+              phone: user.phone.replace(/\d(?=\d{4})/g, '*') 
+            });
+            return { result: 'success' };
+          } else {
+            logger.error('Failed to send email OTP via Fast2SMS', { email, error: result.message });
+            throw new Error('Failed to send OTP. Please try again.');
+          }
+        } else {
+          // Fast2SMS not configured, use test OTP
+          logger.info('Fast2SMS not configured, using test OTP for email', { email });
+          storeOTP(email, testOtp, 'email');
+          return { result: 'success', otp: testOtp };
+        }
+      } catch (error) {
+        logger.error('Error sending email OTP to phone number', { email, error: error.message });
+        // Fallback to test OTP if Fast2SMS fails
+        if (configDoc.testOtp) {
+          storeOTP(email, testOtp, 'email');
+          return { result: 'success', otp: testOtp };
+        }
+        throw new Error('Failed to send OTP. Please try again.');
+      }
     },
 
     async sendOtpToPhoneNumber(_, { phone }) {
@@ -3881,18 +3971,23 @@ const resolvers = {
 
       // Check if Fast2SMS is enabled and configured
       const { sendOTP, isConfigured } = require('../services/fast2sms.service');
+      const { generateOTP, storeOTP } = require('../services/otpStorage.service');
 
       try {
         if (await isConfigured()) {
           // Generate 6-digit OTP
-          const otp = Math.floor(100000 + Math.random() * 900000).toString();
+          const otp = generateOTP();
+
+          // Store OTP for verification (using phone as key)
+          storeOTP(phone, otp, 'phone');
 
           // Send OTP via Fast2SMS
           const result = await sendOTP(phone, otp);
 
           if (result.success) {
-            // Store OTP in user session/cache for verification (implementation depends on your caching strategy)
-            // For now, we return success - in production, you should store OTP temporarily
+            logger.info('Phone OTP sent via Fast2SMS', { 
+              phone: phone.replace(/\d(?=\d{4})/g, '*') 
+            });
             return { result: 'success' };
           } else {
             logger.error('Failed to send OTP via Fast2SMS', { phone, error: result.message });
@@ -3901,12 +3996,14 @@ const resolvers = {
         } else {
           // Fast2SMS not configured, use test OTP
           logger.info('Fast2SMS not configured, using test OTP', { phone });
+          storeOTP(phone, testOtp, 'phone');
           return { result: 'success', otp: testOtp };
         }
       } catch (error) {
         logger.error('Error sending OTP to phone number', { phone, error: error.message });
         // Fallback to test OTP if Fast2SMS fails
         if (configDoc.testOtp) {
+          storeOTP(phone, testOtp, 'phone');
           return { result: 'success', otp: testOtp };
         }
         throw new Error('Failed to send OTP. Please try again.');
@@ -4439,7 +4536,71 @@ const resolvers = {
       return populatedOrder;
     },
 
+    async verifyRazorpayOrderPayment(_, { orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
 
+      const { verifyPayment } = require('../payments/razorpay.service');
+
+      // Verify the payment signature
+      const isValid = await verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+
+      if (!isValid) {
+        throw new Error('Payment verification failed: Invalid signature');
+      }
+
+      // Find the order
+      const order = await Order.findById(orderId)
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Verify the order belongs to the user
+      if (order.customer._id.toString() !== context.user._id.toString()) {
+        throw new Error('Unauthorized: This order does not belong to you');
+      }
+
+      // Verify the order is using Razorpay payment
+      if (order.paymentMethod?.toUpperCase() !== 'RAZORPAY') {
+        throw new Error('Order is not using Razorpay payment method');
+      }
+
+      // Verify the Razorpay order ID matches (if already set)
+      // If not set yet, this is the first verification, so we'll set it
+      if (order.razorpayOrderId && order.razorpayOrderId !== razorpayOrderId) {
+        throw new Error('Razorpay order ID mismatch');
+      }
+
+      // Update the order with payment information
+      const updatedOrder = await Order.findByIdAndUpdate(
+        orderId,
+        {
+          razorpayOrderId: razorpayOrderId,
+          razorpayPaymentId: razorpayPaymentId,
+          paymentStatus: 'paid',
+          paidAmount: order.orderAmount
+        },
+        { new: true }
+      )
+        .populate('restaurant')
+        .populate('customer')
+        .populate('rider')
+        .lean();
+
+      logger.info('Razorpay order payment verified', {
+        orderId: orderId,
+        razorpayOrderId: razorpayOrderId,
+        razorpayPaymentId: razorpayPaymentId
+      });
+
+      return updatedOrder;
+    },
 
     async acceptOrder(_, { _id, time }, context) {
       if (!context.user) {
@@ -4824,9 +4985,54 @@ const resolvers = {
         return { result: 'success' };
       }
 
-      // In production, send password reset email
-      // For now, return success
+      // Check if user has phone number
+      if (!user.phone) {
+        throw new Error('User does not have a phone number. Please contact support.');
+      }
+
+      const configDoc = await Configuration.getConfiguration();
+      const testOtp = configDoc.testOtp || '123456';
+
+      // Check if Fast2SMS is enabled and configured
+      const { sendOTP, isConfigured } = require('../services/fast2sms.service');
+      const { generateOTP, storeOTP } = require('../services/otpStorage.service');
+
+      try {
+        if (await isConfigured()) {
+          // Generate 6-digit OTP for password reset
+          const otp = generateOTP();
+
+          // Store OTP for verification (using email as key, type 'password_reset')
+          storeOTP(email, otp, 'password_reset');
+
+          // Send OTP via Fast2SMS to user's phone
+          const result = await sendOTP(user.phone, otp, `Your password reset OTP is ${otp}. Please do not share this OTP with anyone.`);
+
+          if (result.success) {
+            logger.info('Password reset OTP sent via Fast2SMS', { 
+              email, 
+              phone: user.phone.replace(/\d(?=\d{4})/g, '*') 
+            });
       return { result: 'success' };
+          } else {
+            logger.error('Failed to send password reset OTP via Fast2SMS', { email, error: result.message });
+            throw new Error('Failed to send OTP. Please try again.');
+          }
+        } else {
+          // Fast2SMS not configured, use test OTP
+          logger.info('Fast2SMS not configured, using test OTP for password reset', { email });
+          storeOTP(email, testOtp, 'password_reset');
+          return { result: 'success', otp: testOtp };
+        }
+      } catch (error) {
+        logger.error('Error sending password reset OTP', { email, error: error.message });
+        // Fallback to test OTP if Fast2SMS fails
+        if (configDoc.testOtp) {
+          storeOTP(email, testOtp, 'password_reset');
+          return { result: 'success', otp: testOtp };
+        }
+        throw new Error('Failed to send OTP. Please try again.');
+      }
     },
 
     async resetPassword(_, { password, email }, context) {
