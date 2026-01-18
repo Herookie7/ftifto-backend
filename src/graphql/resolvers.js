@@ -4412,13 +4412,15 @@ const resolvers = {
             amount: orderAmount
           });
         } catch (error) {
+          const errorMessage = error?.message || error?.error?.description || error?.error?.code || 'Unknown error occurred';
           logger.error('Failed to create Razorpay order', {
-            error: error.message,
+            error: errorMessage,
+            errorDetails: error?.error,
             stack: error.stack,
             orderAmount,
             currency: (await Configuration.getConfiguration())?.currency
           });
-          throw new Error(`Failed to initialize payment: ${error.message}. Please try again or use a different payment method.`);
+          throw new Error(`Failed to initialize payment: ${errorMessage}. Please try again or use a different payment method.`);
         }
       }
 
