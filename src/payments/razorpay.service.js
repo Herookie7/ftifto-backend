@@ -56,10 +56,27 @@ const createOrder = async (orderId, amount, currency = 'INR', options = {}) => {
   const razorpay = await getRazorpayClient();
   const amountInPaise = toMinorUnits(amount);
 
+  // Generate receipt - Razorpay requires receipt to be max 40 characters
+  let receipt = options.receipt;
+  if (!receipt) {
+    // Use a shorter format: rcpt_ + timestamp (ensures uniqueness)
+    const timestamp = Date.now().toString();
+    receipt = `rcpt_${timestamp}`;
+    // Truncate to 40 characters if needed (shouldn't be needed with this format, but safety check)
+    if (receipt.length > 40) {
+      receipt = receipt.substring(0, 40);
+    }
+  } else {
+    // If receipt is provided, ensure it's within 40 character limit
+    if (receipt.length > 40) {
+      receipt = receipt.substring(0, 40);
+    }
+  }
+
   const orderOptions = {
     amount: amountInPaise,
     currency: currency.toUpperCase(),
-    receipt: options.receipt || `receipt_${orderId}_${Date.now()}`,
+    receipt: receipt,
     notes: {
       orderId: orderId.toString(),
       ...options.notes

@@ -13,10 +13,13 @@
         key_secret: configuration.razorpayKeySecret
       });
 
+      // Generate receipt - Razorpay requires receipt to be max 40 characters
+      const receipt = `wt_${Date.now()}`; // wt = wallet topup, shorter format
+      
       const options = {
         amount: Math.round(amount * 100), // amount in paisa
         currency: configuration.currency || 'INR',
-        receipt: `wallet_topup_${Date.now()}`,
+        receipt: receipt.length > 40 ? receipt.substring(0, 40) : receipt,
         payment_capture: 1
       };
 
