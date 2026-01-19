@@ -1105,6 +1105,8 @@ const typeDefs = gql`
     _id: ID
     riderId: ID
     rider: User
+    customerId: ID
+    customer: User
     startDate: Date
     endDate: Date
     reason: String
@@ -1479,6 +1481,7 @@ const typeDefs = gql`
     
     # Holiday Request Queries
     getHolidayRequests(status: String): [HolidayRequest]
+    getCustomerLeaveRequests(status: String): [HolidayRequest]
   }
 
   type Mutation {

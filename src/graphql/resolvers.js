@@ -228,12 +228,44 @@ const resolvers = {
     },
 
     getHolidayRequests: async (_, { status }, context) => {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
       const query = {};
       if (status) query.status = status;
-      // If rider, only show own requests? 
-      // if (context.user.role === 'rider') query.riderId = context.user._id;
 
-      return await HolidayRequest.find(query).populate('riderId').populate('approvedBy').sort({ createdAt: -1 });
+      // If customer or rider, only show own requests
+      if (context.user.role === 'customer') {
+        query.customerId = context.user._id;
+      } else if (context.user.role === 'rider') {
+        query.riderId = context.user._id;
+      }
+      // Admin/super-admin can see all requests (no filter)
+
+      return await HolidayRequest.find(query)
+        .populate('riderId', 'name email phone')
+        .populate('customerId', 'name email phone')
+        .populate('approvedBy', 'name email')
+        .sort({ createdAt: -1 });
+    },
+
+    getCustomerLeaveRequests: async (_, { status }, context) => {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      if (context.user.role !== 'customer') {
+        throw new Error('Only customers can access this query');
+      }
+
+      const query = { customerId: context.user._id };
+      if (status) query.status = status;
+
+      return await HolidayRequest.find(query)
+        .populate('customerId', 'name email phone')
+        .populate('approvedBy', 'name email')
+        .sort({ createdAt: -1 });
     },
 
     // Nearby restaurants with full details
@@ -4390,10 +4422,15 @@ const resolvers = {
       const isRazorpay = paymentMethod && (paymentMethod.toUpperCase() === 'RAZORPAY' || paymentMethod.toLowerCase() === 'razorpay');
 
       if (isRazorpay) {
+        // Validate order amount before proceeding
+        if (!orderAmount || isNaN(orderAmount) || orderAmount <= 0) {
+          throw new Error('Invalid order amount. Please check your order and try again.');
+        }
+
         try {
           const { createOrder } = require('../payments/razorpay.service');
           const configDoc = await Configuration.getConfiguration();
-          const currency = configDoc.currency || 'INR';
+          const currency = (configDoc?.currency && typeof configDoc.currency === 'string' && configDoc.currency.trim()) || 'INR';
 
           // Create Razorpay order first (before creating internal order)
           razorpayOrder = await createOrder(
@@ -4412,13 +4449,36 @@ const resolvers = {
             amount: orderAmount
           });
         } catch (error) {
-          const errorMessage = error?.message || error?.error?.description || error?.error?.code || 'Unknown error occurred';
+          // Extract error message with proper fallback handling
+          let errorMessage = 'Unknown error occurred';
+          if (error) {
+            if (typeof error === 'string') {
+              errorMessage = error;
+            } else if (error.message && typeof error.message === 'string') {
+              errorMessage = error.message;
+            } else if (error.error) {
+              if (error.error.description && typeof error.error.description === 'string') {
+                errorMessage = error.error.description;
+              } else if (error.error.code && typeof error.error.code === 'string') {
+                errorMessage = error.error.code;
+              } else if (typeof error.error === 'string') {
+                errorMessage = error.error;
+              }
+            } else if (error.toString && typeof error.toString === 'function') {
+              const errorStr = error.toString();
+              if (errorStr && errorStr !== '[object Object]') {
+                errorMessage = errorStr;
+              }
+            }
+          }
+
           logger.error('Failed to create Razorpay order', {
             error: errorMessage,
             errorDetails: error?.error,
-            stack: error.stack,
+            stack: error?.stack,
             orderAmount,
-            currency: (await Configuration.getConfiguration())?.currency
+            currency: (await Configuration.getConfiguration())?.currency,
+            rawError: error
           });
           throw new Error(`Failed to initialize payment: ${errorMessage}. Please try again or use a different payment method.`);
         }
@@ -6036,8 +6096,8 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      if (context.user.role !== 'rider') {
-        throw new Error('Only riders can create holiday requests');
+      if (context.user.role !== 'rider' && context.user.role !== 'customer') {
+        throw new Error('Only riders or customers can create leave requests');
       }
 
       const start = new Date(startDate);
@@ -6051,16 +6111,27 @@ const resolvers = {
         throw new Error('Start date cannot be in the past');
       }
 
-      const request = await HolidayRequest.create({
-        riderId: context.user._id,
+      const requestData = {
         startDate: start,
         endDate: end,
         reason: reason || '',
         status: 'PENDING'
-      });
+      };
+
+      if (context.user.role === 'rider') {
+        requestData.riderId = context.user._id;
+      } else if (context.user.role === 'customer') {
+        requestData.customerId = context.user._id;
+      }
+
+      const request = await HolidayRequest.create(requestData);
+
+      const populateFields = context.user.role === 'rider' 
+        ? 'riderId' 
+        : 'customerId';
 
       return await HolidayRequest.findById(request._id)
-        .populate('riderId', 'name email phone')
+        .populate(populateFields, 'name email phone')
         .lean();
     },
 
@@ -6069,8 +6140,8 @@ const resolvers = {
         throw new Error('Authentication required');
       }
 
-      if (context.user.role !== 'admin') {
-        throw new Error('Only admins can update holiday request status');
+      if (context.user.role !== 'admin' && context.user.role !== 'super-admin') {
+        throw new Error('Only admins or super-admins can update leave request status');
       }
 
       if (!['APPROVED', 'REJECTED', 'CANCELLED'].includes(status)) {
@@ -6096,10 +6167,13 @@ const resolvers = {
 
       await request.save();
 
-      return await HolidayRequest.findById(request._id)
+      const populatedRequest = await HolidayRequest.findById(request._id)
         .populate('riderId', 'name email phone')
+        .populate('customerId', 'name email phone')
         .populate('approvedBy', 'name email')
         .lean();
+      
+      return populatedRequest;
     },
 
     // Franchise mutations

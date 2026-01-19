@@ -5,7 +5,17 @@ const holidayRequestSchema = new mongoose.Schema(
     riderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: function() {
+        return !this.customerId;
+      },
+      index: true
+    },
+    customerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: function() {
+        return !this.riderId;
+      },
       index: true
     },
     startDate: {
@@ -42,6 +52,7 @@ const holidayRequestSchema = new mongoose.Schema(
 );
 
 holidayRequestSchema.index({ riderId: 1, status: 1 });
+holidayRequestSchema.index({ customerId: 1, status: 1 });
 holidayRequestSchema.index({ startDate: 1, endDate: 1 });
 
 module.exports = mongoose.model('HolidayRequest', holidayRequestSchema);
