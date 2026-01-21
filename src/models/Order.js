@@ -16,48 +16,45 @@ const locationSchema = new mongoose.Schema(
   { _id: false }
 );
 
-const addonOptionSchema = new mongoose.Schema(
-  {
-    title: { type: String, required: true, trim: true },
-    description: { type: String, trim: true },
-    price: { type: Number, required: true }
-  },
-  { _id: false }
-);
+const addonOptionSchema = new mongoose.Schema({
+  // Keep IDs enabled so options have stable identifiers for the mobile app
+  title: { type: String, required: true, trim: true },
+  description: { type: String, trim: true },
+  price: { type: Number, required: true }
+});
 
-const addonSchema = new mongoose.Schema(
-  {
-    title: { type: String, required: true, trim: true },
-    description: { type: String, trim: true },
-    quantityMinimum: { type: Number, default: 0 },
-    quantityMaximum: { type: Number, default: 1 },
-    options: [addonOptionSchema]
-  },
-  { _id: false }
-);
+const addonSchema = new mongoose.Schema({
+  // Enable _id so addons have IDs as expected by the mobile client
+  title: { type: String, required: true, trim: true },
+  description: { type: String, trim: true },
+  quantityMinimum: { type: Number, default: 0 },
+  quantityMaximum: { type: Number, default: 1 },
+  options: [addonOptionSchema]
+});
 
-const variationSchema = new mongoose.Schema(
-  {
-    title: { type: String, required: true, trim: true },
-    price: { type: Number, required: true },
-    discounted: { type: Number }
-  },
-  { _id: false }
-);
+const variationSchema = new mongoose.Schema({
+  // Enable _id so variation._id is available in GraphQL/mobile responses
+  title: { type: String, required: true, trim: true },
+  price: { type: Number, required: true },
+  discounted: { type: Number }
+});
 
-const orderItemSchema = new mongoose.Schema(
-  {
-    product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
-    title: { type: String, required: true, trim: true },
-    description: { type: String, trim: true },
-    image: { type: String, trim: true },
-    quantity: { type: Number, required: true, min: 1 },
-    variation: variationSchema,
-    addons: [addonSchema],
-    specialInstructions: { type: String, trim: true }
-  },
-  { _id: false }
-);
+const orderItemSchema = new mongoose.Schema({
+  // Keep existing product reference for backoffice/admin usage
+  product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+
+  // Add a food field to stay backward‑compatible with the mobile app schema
+  // (stored as string ID; can be a Product/ObjectId.toString())
+  food: { type: String, trim: true },
+
+  title: { type: String, required: true, trim: true },
+  description: { type: String, trim: true },
+  image: { type: String, trim: true },
+  quantity: { type: Number, required: true, min: 1 },
+  variation: variationSchema,
+  addons: [addonSchema],
+  specialInstructions: { type: String, trim: true }
+});
 
 const orderStatusHistorySchema = new mongoose.Schema(
   {
