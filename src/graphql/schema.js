@@ -1516,7 +1516,7 @@ const typeDefs = gql`
     cancelRiderWithdrawRequest(id: ID!): WithdrawRequest
     createUser(userInput: CreateUserInput!): AuthResponse
     verifyOtp(otp: String!, email: String, phone: String): VerifyOtpResponse
-    sendOtpToEmail(email: String!): ResultResponse
+    sendOtpToEmail(email: String!, phone: String): ResultResponse
     sendOtpToPhoneNumber(phone: String!): ResultResponse
 
     # Vendor management mutations

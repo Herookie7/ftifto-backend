@@ -3926,7 +3926,7 @@ const resolvers = {
       return true;
     },
 
-    async sendOtpToEmail(_, { email }) {
+    async sendOtpToEmail(_, { email, phone }) {
       const configDoc = await Configuration.getConfiguration();
       const skipEmailVerification = configDoc.skipEmailVerification;
       const testOtp = configDoc.testOtp || '123456';
@@ -3936,17 +3936,23 @@ const resolvers = {
         return { result: 'success', otp: testOtp };
       }
 
-      // Find user by email to get their phone number
-      const user = await User.findOne({ email });
-      
-      if (!user) {
-        // Don't reveal if user exists for security
-      return { result: 'success' };
-      }
+      let phoneNumber = phone;
 
-      // Check if user has phone number
-      if (!user.phone) {
-        throw new Error('User does not have a phone number. Please use phone OTP instead.');
+      // If phone is not provided, try to find user by email to get their phone number
+      if (!phoneNumber) {
+        const user = await User.findOne({ email });
+        
+        if (!user) {
+          // Don't reveal if user exists for security
+          return { result: 'success' };
+        }
+
+        // Check if user has phone number
+        if (!user.phone) {
+          throw new Error('User does not have a phone number. Please use phone OTP instead.');
+        }
+
+        phoneNumber = user.phone;
       }
 
       // Check if Fast2SMS is enabled and configured
@@ -3962,12 +3968,12 @@ const resolvers = {
           storeOTP(email, otp, 'email');
 
           // Send OTP via Fast2SMS to user's phone
-          const result = await sendOTP(user.phone, otp);
+          const result = await sendOTP(phoneNumber, otp);
 
           if (result.success) {
             logger.info('Email OTP sent via Fast2SMS to phone', { 
               email, 
-              phone: user.phone.replace(/\d(?=\d{4})/g, '*') 
+              phone: phoneNumber.replace(/\d(?=\d{4})/g, '*') 
             });
             return { result: 'success' };
           } else {
