@@ -49,11 +49,31 @@ const sendSMS = async (numbers, message, options = {}) => {
   }
 
   // Normalize phone numbers
+  // Fast2SMS requires 10-digit Indian phone numbers (without country code)
+  // Remove all non-digits, then take last 10 digits
   let phoneNumbers;
   if (Array.isArray(numbers)) {
-    phoneNumbers = numbers.map(num => String(num).replace(/\D/g, '').slice(-10)).join(',');
+    phoneNumbers = numbers.map(num => {
+      const cleaned = String(num).replace(/\D/g, '');
+      // If number starts with 91 (India country code), remove it
+      const normalized = cleaned.startsWith('91') && cleaned.length === 12 
+        ? cleaned.slice(2) 
+        : cleaned.slice(-10);
+      if (normalized.length !== 10) {
+        throw new Error(`Invalid phone number format: ${num}. Expected 10 digits.`);
+      }
+      return normalized;
+    }).join(',');
   } else {
-    phoneNumbers = String(numbers).replace(/\D/g, '').slice(-10);
+    const cleaned = String(numbers).replace(/\D/g, '');
+    // If number starts with 91 (India country code), remove it
+    const normalized = cleaned.startsWith('91') && cleaned.length === 12 
+      ? cleaned.slice(2) 
+      : cleaned.slice(-10);
+    if (normalized.length !== 10) {
+      throw new Error(`Invalid phone number format: ${numbers}. Expected 10 digits.`);
+    }
+    phoneNumbers = normalized;
   }
 
   if (!phoneNumbers) {

@@ -503,6 +503,7 @@ const typeDefs = gql`
 
   type ResultResponse {
     result: String
+    otp: String
   }
 
   type UserExistResponse {
