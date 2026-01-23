@@ -90,6 +90,12 @@ const sendSMS = async (numbers, message, options = {}) => {
   };
 
   try {
+    logger.info('Sending SMS via Fast2SMS', {
+      numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*'),
+      route: payload.route,
+      messageLength: message.length
+    });
+
     const response = await fetch(FAST2SMS_API_URL, {
       method: 'POST',
       headers: {
@@ -99,21 +105,57 @@ const sendSMS = async (numbers, message, options = {}) => {
       body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
+    // Get response text first to handle non-JSON responses
+    const responseText = await response.text();
+    
+    // Log raw response for debugging (truncated for security)
+    logger.info('Fast2SMS API response received', {
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers.get('content-type'),
+      responseLength: responseText.length,
+      responsePreview: responseText.substring(0, 200) // First 200 chars for debugging
+    });
+
+    // Check if response is empty
+    if (!responseText || responseText.trim() === '') {
+      logger.error('Fast2SMS API returned empty response', {
+        status: response.status,
+        statusText: response.statusText,
+        numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*')
+      });
+      throw new Error('Fast2SMS API returned empty response. Please check API key and account status.');
+    }
+
+    // Try to parse JSON
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (jsonError) {
+      logger.error('Fast2SMS API returned invalid JSON', {
+        status: response.status,
+        statusText: response.statusText,
+        responseText: responseText.substring(0, 500), // First 500 chars for debugging
+        jsonError: jsonError.message,
+        numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*')
+      });
+      throw new Error(`Fast2SMS API returned invalid response. Status: ${response.status}. Please check API key and account status.`);
+    }
 
     if (!response.ok) {
       logger.error('Fast2SMS API error', {
         status: response.status,
         statusText: response.statusText,
-        data
+        data,
+        responseText: responseText.substring(0, 500)
       });
-      throw new Error(data.message || 'Fast2SMS API request failed');
+      throw new Error(data.message || `Fast2SMS API request failed (Status: ${response.status})`);
     }
 
     // Fast2SMS returns success status in return field
     if (data.return === true || data.return === 'true') {
       logger.info('Fast2SMS sent successfully', {
-        numbers: phoneNumbers,
+        numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*'),
         requestId: data.request_id
       });
 
@@ -136,8 +178,9 @@ const sendSMS = async (numbers, message, options = {}) => {
       };
     } else {
       logger.error('Fast2SMS returned error', {
-        numbers: phoneNumbers,
-        error: data.message || 'Unknown error'
+        numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*'),
+        error: data.message || 'Unknown error',
+        fullResponse: data
       });
 
       auditLogger.logEvent({
@@ -157,9 +200,30 @@ const sendSMS = async (numbers, message, options = {}) => {
       };
     }
   } catch (error) {
+    // Check if it's a JSON parsing error
+    if (error.message && error.message.includes('JSON')) {
+      logger.error('Fast2SMS JSON parsing error', {
+        error: error.message,
+        numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*'),
+        stack: error.stack
+      });
+      throw new Error('Fast2SMS API returned invalid response. Please check API key, account balance, and account status.');
+    }
+
+    // Check if it's a network error
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      logger.error('Fast2SMS network error', {
+        error: error.message,
+        numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*')
+      });
+      throw new Error('Failed to connect to Fast2SMS API. Please check network connection and API endpoint.');
+    }
+
     logger.error('Fast2SMS service error', {
       error: error.message,
-      numbers: phoneNumbers
+      errorName: error.name,
+      numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*'),
+      stack: error.stack
     });
 
     auditLogger.logEvent({
@@ -169,10 +233,16 @@ const sendSMS = async (numbers, message, options = {}) => {
       entityType: 'sms',
       metadata: {
         numbers: phoneNumbers,
-        error: error.message
+        error: error.message,
+        errorName: error.name
       }
     });
 
+    // Re-throw with user-friendly message if it's our custom error
+    if (error.message && !error.message.includes('Fast2SMS')) {
+      throw new Error(`Fast2SMS error: ${error.message}`);
+    }
+    
     throw error;
   }
 };
