@@ -3768,6 +3768,7 @@ const resolvers = {
       const { verifyOTP } = require('../services/otpStorage.service');
       const configDoc = await Configuration.getConfiguration();
       const testOtp = configDoc.testOtp || '123456';
+      const isProduction = config.app.isProduction;
 
       // Determine the key and type for OTP verification
       let key = null;
@@ -3802,20 +3803,28 @@ const resolvers = {
         return { result: 'success' };
       }
 
-      // Fallback to test OTP for backward compatibility (if configured)
-      if (testOtp && otp === testOtp) {
+      // Fallback to test OTP only in development mode (for testing purposes)
+      if (!isProduction && testOtp && otp === testOtp) {
+        logger.warn('OTP verified using test OTP in development mode', { 
+          key: key.replace(/\d(?=\d{4})/g, '*'), 
+          type 
+        });
         // Update user verification status
         if (email) {
           await User.findOneAndUpdate({ email }, { emailIsVerified: true });
         } else if (phone) {
           await User.findOneAndUpdate({ phone }, { phoneIsVerified: true });
         }
-        logger.info('OTP verified using test OTP', { key: key.replace(/\d(?=\d{4})/g, '*'), type });
         return { result: 'success' };
       }
 
       // OTP is invalid
-      logger.warn('Invalid OTP provided', { key: key.replace(/\d(?=\d{4})/g, '*'), type });
+      logger.warn('Invalid OTP provided', { 
+        key: key.replace(/\d(?=\d{4})/g, '*'), 
+        type,
+        isProduction,
+        providedOtpLength: otp ? otp.length : 0
+      });
       throw new Error('Invalid OTP');
     },
 
@@ -3930,9 +3939,13 @@ const resolvers = {
       const configDoc = await Configuration.getConfiguration();
       const skipEmailVerification = configDoc.skipEmailVerification;
       const testOtp = configDoc.testOtp || '123456';
+      const isProduction = config.app.isProduction;
 
       // If email verification is skipped, return success immediately
       if (skipEmailVerification) {
+        logger.info('Email verification skipped, returning test OTP', { email });
+        const { storeOTP } = require('../services/otpStorage.service');
+        storeOTP(email, testOtp, 'email');
         return { result: 'success', otp: testOtp };
       }
 
@@ -3956,16 +3969,40 @@ const resolvers = {
       }
 
       // Check if Fast2SMS is enabled and configured
-      const { sendOTP, isConfigured } = require('../services/fast2sms.service');
+      const { sendOTP, isConfigured, getFast2SMSConfig } = require('../services/fast2sms.service');
       const { generateOTP, storeOTP } = require('../services/otpStorage.service');
 
+      // Log Fast2SMS configuration status (masked for security)
+      const fast2smsConfig = await getFast2SMSConfig();
+      logger.info('Email OTP request - Fast2SMS configuration check', {
+        email,
+        phone: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
+        fast2smsEnabled: fast2smsConfig.enabled,
+        hasApiKey: !!fast2smsConfig.apiKey,
+        apiKeyLength: fast2smsConfig.apiKey ? fast2smsConfig.apiKey.length : 0,
+        isProduction
+      });
+
       try {
-        if (await isConfigured()) {
+        const configured = await isConfigured();
+        if (configured) {
           // Generate 6-digit OTP
           const otp = generateOTP();
 
           // Store OTP for verification (using email as key)
           storeOTP(email, otp, 'email');
+
+          // Log phone number normalization
+          const cleaned = String(phoneNumber).replace(/\D/g, '');
+          const normalized = cleaned.startsWith('91') && cleaned.length === 12 
+            ? cleaned.slice(2) 
+            : cleaned.slice(-10);
+          logger.info('Sending email OTP via Fast2SMS', {
+            email,
+            originalPhone: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
+            normalizedPhone: normalized.replace(/\d(?=\d{4})/g, '*'),
+            phoneLength: normalized.length
+          });
 
           // Send OTP via Fast2SMS to user's phone
           const result = await sendOTP(phoneNumber, otp);
@@ -3973,31 +4010,73 @@ const resolvers = {
           if (result.success) {
             logger.info('Email OTP sent via Fast2SMS to phone', { 
               email, 
-              phone: phoneNumber.replace(/\d(?=\d{4})/g, '*') 
+              phone: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
+              requestId: result.requestId
             });
             return { result: 'success' };
           } else {
-            logger.error('Failed to send email OTP via Fast2SMS', { email, error: result.message });
-            throw new Error('Failed to send OTP. Please try again.');
+            logger.error('Failed to send email OTP via Fast2SMS', { 
+              email, 
+              phone: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
+              error: result.message,
+              fast2smsResponse: result
+            });
+            
+            // In production, don't silently fall back to test OTP
+            if (isProduction) {
+              throw new Error(`Failed to send OTP: ${result.message || 'SMS service error. Please try again or contact support.'}`);
+            }
+            
+            // In development, allow test OTP fallback
+            logger.warn('Falling back to test OTP in development mode due to Fast2SMS failure', {
+              email,
+              error: result.message
+            });
+            storeOTP(email, testOtp, 'email');
+            return { result: 'success', otp: testOtp };
           }
         } else {
-          // Fast2SMS not configured, use test OTP
-          logger.info('Fast2SMS not configured, using test OTP for email', { email });
+          // Fast2SMS not configured
+          logger.warn('Fast2SMS not configured for email OTP', {
+            email,
+            fast2smsEnabled: fast2smsConfig.enabled,
+            hasApiKey: !!fast2smsConfig.apiKey
+          });
+          
+          // In production, throw error if Fast2SMS is not configured
+          if (isProduction) {
+            throw new Error('OTP service is not configured. Please contact support.');
+          }
+          
+          // In development, use test OTP
+          logger.info('Using test OTP for email (development mode - Fast2SMS not configured)', { email });
           storeOTP(email, testOtp, 'email');
           return { result: 'success', otp: testOtp };
         }
       } catch (error) {
         logger.error('Error sending email OTP to phone number', { 
           email, 
+          phone: phoneNumber ? phoneNumber.replace(/\d(?=\d{4})/g, '*') : 'N/A',
           error: error.message,
-          stack: error.stack
+          stack: error.stack,
+          isProduction
         });
-        // Fallback to test OTP if Fast2SMS fails
+        
+        // In production, don't silently fall back to test OTP
+        if (isProduction) {
+          throw new Error(`Failed to send OTP: ${error.message || 'Please try again or contact support.'}`);
+        }
+        
+        // In development, allow test OTP fallback
         if (configDoc.testOtp) {
-          logger.info('Using test OTP as fallback for email OTP due to error');
+          logger.warn('Using test OTP as fallback in development mode due to error', {
+            email,
+            error: error.message
+          });
           storeOTP(email, testOtp, 'email');
           return { result: 'success', otp: testOtp };
         }
+        
         throw new Error(`Failed to send OTP: ${error.message || 'Please try again.'}`);
       }
     },
@@ -4006,6 +4085,7 @@ const resolvers = {
       const configDoc = await Configuration.getConfiguration();
       const skipMobileVerification = configDoc.skipMobileVerification;
       const testOtp = configDoc.testOtp || '123456';
+      const isProduction = config.app.isProduction;
 
       // Validate phone number
       if (!phone || typeof phone !== 'string' || phone.trim() === '') {
@@ -4026,16 +4106,39 @@ const resolvers = {
       }
 
       // Check if Fast2SMS is enabled and configured
-      const { sendOTP, isConfigured } = require('../services/fast2sms.service');
+      const { sendOTP, isConfigured, getFast2SMSConfig } = require('../services/fast2sms.service');
       const { generateOTP, storeOTP } = require('../services/otpStorage.service');
 
+      // Log Fast2SMS configuration status (masked for security)
+      const fast2smsConfig = await getFast2SMSConfig();
+      logger.info('Phone OTP request - Fast2SMS configuration check', {
+        phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'),
+        fast2smsEnabled: fast2smsConfig.enabled,
+        hasApiKey: !!fast2smsConfig.apiKey,
+        apiKeyLength: fast2smsConfig.apiKey ? fast2smsConfig.apiKey.length : 0,
+        isProduction
+      });
+
       try {
-        if (await isConfigured()) {
+        const configured = await isConfigured();
+        if (configured) {
           // Generate 6-digit OTP
           const otp = generateOTP();
 
           // Store OTP for verification (using normalized phone as key)
           storeOTP(normalizedPhone, otp, 'phone');
+
+          // Log phone number normalization
+          const cleaned = String(phone).replace(/\D/g, '');
+          const normalized = cleaned.startsWith('91') && cleaned.length === 12 
+            ? cleaned.slice(2) 
+            : cleaned.slice(-10);
+          logger.info('Sending phone OTP via Fast2SMS', {
+            originalPhone: phone.replace(/\d(?=\d{4})/g, '*'),
+            normalizedPhone: normalized.replace(/\d(?=\d{4})/g, '*'),
+            phoneLength: normalized.length,
+            storedKey: normalizedPhone.replace(/\d(?=\d{4})/g, '*')
+          });
 
           // Send OTP via Fast2SMS
           const result = await sendOTP(phone, otp);
@@ -4049,16 +4152,38 @@ const resolvers = {
           } else {
             logger.error('Failed to send OTP via Fast2SMS', { 
               phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'), 
-              error: result.message 
+              error: result.message,
+              fast2smsResponse: result
             });
-            // Fallback to test OTP on Fast2SMS failure
-            logger.info('Falling back to test OTP due to Fast2SMS failure');
+            
+            // In production, don't silently fall back to test OTP
+            if (isProduction) {
+              throw new Error(`Failed to send OTP: ${result.message || 'SMS service error. Please try again or contact support.'}`);
+            }
+            
+            // In development, allow test OTP fallback
+            logger.warn('Falling back to test OTP in development mode due to Fast2SMS failure', {
+              phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'),
+              error: result.message
+            });
             storeOTP(normalizedPhone, testOtp, 'phone');
             return { result: 'success', otp: testOtp };
           }
         } else {
-          // Fast2SMS not configured, use test OTP
-          logger.info('Fast2SMS not configured, using test OTP', { 
+          // Fast2SMS not configured
+          logger.warn('Fast2SMS not configured for phone OTP', {
+            phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'),
+            fast2smsEnabled: fast2smsConfig.enabled,
+            hasApiKey: !!fast2smsConfig.apiKey
+          });
+          
+          // In production, throw error if Fast2SMS is not configured
+          if (isProduction) {
+            throw new Error('OTP service is not configured. Please contact support.');
+          }
+          
+          // In development, use test OTP
+          logger.info('Using test OTP for phone (development mode - Fast2SMS not configured)', { 
             phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*') 
           });
           storeOTP(normalizedPhone, testOtp, 'phone');
@@ -4068,14 +4193,25 @@ const resolvers = {
         logger.error('Error sending OTP to phone number', { 
           phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'), 
           error: error.message,
-          stack: error.stack
+          stack: error.stack,
+          isProduction
         });
-        // Fallback to test OTP if Fast2SMS fails
+        
+        // In production, don't silently fall back to test OTP
+        if (isProduction) {
+          throw new Error(`Failed to send OTP: ${error.message || 'Please try again or contact support.'}`);
+        }
+        
+        // In development, allow test OTP fallback
         if (configDoc.testOtp) {
-          logger.info('Using test OTP as fallback due to error');
+          logger.warn('Using test OTP as fallback in development mode due to error', {
+            phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'),
+            error: error.message
+          });
           storeOTP(normalizedPhone, testOtp, 'phone');
           return { result: 'success', otp: testOtp };
         }
+        
         throw new Error(`Failed to send OTP: ${error.message || 'Please try again.'}`);
       }
     },
@@ -5092,18 +5228,43 @@ const resolvers = {
 
       const configDoc = await Configuration.getConfiguration();
       const testOtp = configDoc.testOtp || '123456';
+      const isProduction = config.app.isProduction;
 
       // Check if Fast2SMS is enabled and configured
-      const { sendOTP, isConfigured } = require('../services/fast2sms.service');
+      const { sendOTP, isConfigured, getFast2SMSConfig } = require('../services/fast2sms.service');
       const { generateOTP, storeOTP } = require('../services/otpStorage.service');
 
+      // Log Fast2SMS configuration status (masked for security)
+      const fast2smsConfig = await getFast2SMSConfig();
+      logger.info('Password reset OTP request - Fast2SMS configuration check', {
+        email,
+        phone: user.phone.replace(/\d(?=\d{4})/g, '*'),
+        fast2smsEnabled: fast2smsConfig.enabled,
+        hasApiKey: !!fast2smsConfig.apiKey,
+        apiKeyLength: fast2smsConfig.apiKey ? fast2smsConfig.apiKey.length : 0,
+        isProduction
+      });
+
       try {
-        if (await isConfigured()) {
+        const configured = await isConfigured();
+        if (configured) {
           // Generate 6-digit OTP for password reset
           const otp = generateOTP();
 
           // Store OTP for verification (using email as key, type 'password_reset')
           storeOTP(email, otp, 'password_reset');
+
+          // Log phone number normalization
+          const cleaned = String(user.phone).replace(/\D/g, '');
+          const normalized = cleaned.startsWith('91') && cleaned.length === 12 
+            ? cleaned.slice(2) 
+            : cleaned.slice(-10);
+          logger.info('Sending password reset OTP via Fast2SMS', {
+            email,
+            originalPhone: user.phone.replace(/\d(?=\d{4})/g, '*'),
+            normalizedPhone: normalized.replace(/\d(?=\d{4})/g, '*'),
+            phoneLength: normalized.length
+          });
 
           // Send OTP via Fast2SMS to user's phone
           const result = await sendOTP(user.phone, otp, `Your password reset OTP is ${otp}. Please do not share this OTP with anyone.`);
@@ -5118,31 +5279,66 @@ const resolvers = {
           } else {
             logger.error('Failed to send password reset OTP via Fast2SMS', { 
               email, 
-              error: result.message 
+              phone: user.phone.replace(/\d(?=\d{4})/g, '*'),
+              error: result.message,
+              fast2smsResponse: result
             });
-            // Fallback to test OTP on Fast2SMS failure
-            logger.info('Falling back to test OTP for password reset due to Fast2SMS failure');
+            
+            // In production, don't silently fall back to test OTP
+            if (isProduction) {
+              throw new Error(`Failed to send OTP: ${result.message || 'SMS service error. Please try again or contact support.'}`);
+            }
+            
+            // In development, allow test OTP fallback
+            logger.warn('Falling back to test OTP in development mode for password reset due to Fast2SMS failure', {
+              email,
+              error: result.message
+            });
             storeOTP(email, testOtp, 'password_reset');
             return { result: 'success', otp: testOtp };
           }
         } else {
-          // Fast2SMS not configured, use test OTP
-          logger.info('Fast2SMS not configured, using test OTP for password reset', { email });
+          // Fast2SMS not configured
+          logger.warn('Fast2SMS not configured for password reset OTP', {
+            email,
+            fast2smsEnabled: fast2smsConfig.enabled,
+            hasApiKey: !!fast2smsConfig.apiKey
+          });
+          
+          // In production, throw error if Fast2SMS is not configured
+          if (isProduction) {
+            throw new Error('OTP service is not configured. Please contact support.');
+          }
+          
+          // In development, use test OTP
+          logger.info('Using test OTP for password reset (development mode - Fast2SMS not configured)', { email });
           storeOTP(email, testOtp, 'password_reset');
           return { result: 'success', otp: testOtp };
         }
       } catch (error) {
         logger.error('Error sending password reset OTP', { 
           email, 
+          phone: user.phone ? user.phone.replace(/\d(?=\d{4})/g, '*') : 'N/A',
           error: error.message,
-          stack: error.stack
+          stack: error.stack,
+          isProduction
         });
-        // Fallback to test OTP if Fast2SMS fails
+        
+        // In production, don't silently fall back to test OTP
+        if (isProduction) {
+          throw new Error(`Failed to send OTP: ${error.message || 'Please try again or contact support.'}`);
+        }
+        
+        // In development, allow test OTP fallback
         if (configDoc.testOtp) {
-          logger.info('Using test OTP as fallback for password reset due to error');
+          logger.warn('Using test OTP as fallback in development mode for password reset due to error', {
+            email,
+            error: error.message
+          });
           storeOTP(email, testOtp, 'password_reset');
           return { result: 'success', otp: testOtp };
         }
+        
         throw new Error(`Failed to send OTP: ${error.message || 'Please try again.'}`);
       }
     },
