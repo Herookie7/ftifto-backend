@@ -12,8 +12,10 @@ const FAST2SMS_API_URL = 'https://www.fast2sms.com/dev/bulkV2';
  */
 const getFast2SMSConfig = async () => {
   const configDoc = await Configuration.getConfiguration();
+  // Trim API key to remove any whitespace that might cause issues
+  const apiKey = configDoc.fast2smsApiKey ? String(configDoc.fast2smsApiKey).trim() : null;
   return {
-    apiKey: configDoc.fast2smsApiKey,
+    apiKey: apiKey,
     enabled: configDoc.fast2smsEnabled || false,
     route: configDoc.fast2smsRoute || 'q' // q = quick, d = promotional, t = transactional
   };
@@ -43,9 +45,21 @@ const sendSMS = async (numbers, message, options = {}) => {
     return { success: false, message: 'Fast2SMS is disabled' };
   }
 
-  if (!config.apiKey) {
-    logger.error('Fast2SMS API key is not configured');
+  if (!config.apiKey || config.apiKey.trim() === '') {
+    logger.error('Fast2SMS API key is not configured or is empty', {
+      hasApiKey: !!config.apiKey,
+      apiKeyLength: config.apiKey ? config.apiKey.length : 0
+    });
     throw new Error('Fast2SMS API key is not configured');
+  }
+
+  // Ensure API key is trimmed (should already be done in getFast2SMSConfig, but double-check)
+  const trimmedApiKey = config.apiKey.trim();
+  if (trimmedApiKey.length < 10) {
+    logger.error('Fast2SMS API key appears to be invalid (too short)', {
+      apiKeyLength: trimmedApiKey.length
+    });
+    throw new Error('Fast2SMS API key appears to be invalid');
   }
 
   // Normalize phone numbers
@@ -90,16 +104,27 @@ const sendSMS = async (numbers, message, options = {}) => {
   };
 
   try {
+    // Log the exact request being sent (for debugging - API key masked)
+    const maskedApiKey = trimmedApiKey ? `${trimmedApiKey.substring(0, 10)}...${trimmedApiKey.substring(trimmedApiKey.length - 10)}` : 'NOT_SET';
     logger.info('Sending SMS via Fast2SMS', {
       numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*'),
       route: payload.route,
-      messageLength: message.length
+      messageLength: message.length,
+      apiKeyMasked: maskedApiKey,
+      apiKeyLength: trimmedApiKey ? trimmedApiKey.length : 0,
+      payload: {
+        route: payload.route,
+        message: payload.message.substring(0, 50) + '...', // First 50 chars
+        language: payload.language,
+        flash: payload.flash,
+        numbers: phoneNumbers.replace(/\d(?=\d{4})/g, '*')
+      }
     });
 
     const response = await fetch(FAST2SMS_API_URL, {
       method: 'POST',
       headers: {
-        'authorization': config.apiKey,
+        'authorization': trimmedApiKey,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(payload)
@@ -267,10 +292,10 @@ const sendOTP = async (phoneNumber, otp, template = null) => {
     // Get configured route from admin settings
     // Route options: 'q' = Quick, 'd' = Promotional, 't' = Transactional
     // Admin can configure the route in Fast2SMS settings
-    // If route is not configured in database, getFast2SMSConfig defaults to 'q', but we prefer 't' for OTP
+    // Default to 'q' (quick) for OTPs as it's more reliable and faster
     const config = await getFast2SMSConfig();
-    // Use admin-configured route, or default to transactional ('t') for OTP if somehow not set
-    const route = config.route && ['q', 'd', 't'].includes(config.route) ? config.route : 't';
+    // Use admin-configured route, or default to quick ('q') for OTP if somehow not set
+    const route = config.route && ['q', 'd', 't'].includes(config.route) ? config.route : 'q';
     
     const result = await sendSMS(phoneNumber, message, { route });
 
