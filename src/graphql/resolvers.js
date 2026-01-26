@@ -139,9 +139,19 @@ const resolvers = {
       const deliveries = await SubscriptionDelivery.find(filter)
         .populate({
           path: 'subscriptionId',
-          match: { restaurantId: restaurantId }
+          match: { restaurantId: restaurantId },
+          populate: {
+            path: 'user',
+            select: 'name phone'
+          }
         })
-        .populate('orderId')
+        .populate({
+          path: 'orderId',
+          populate: {
+            path: 'rider',
+            select: 'name phone'
+          }
+        })
         .exec();
 
       // Filter out deliveries where subscriptionId is null (because of restaurant mismatch)
