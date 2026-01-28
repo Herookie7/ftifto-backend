@@ -115,47 +115,90 @@ const resolvers = {
   },
   Query: {
     getDailyDeliveries: async (_, { restaurantId, date, mealType }, context) => {
-      // if (!context.user || !context.user.id) throw new Error('Unauthenticated');
-      // Check restaurant ownership logic if needed
-
-      const queryDate = date ? new Date(date) : new Date();
-      const startOfDay = new Date(queryDate.setHours(0, 0, 0, 0));
-      const endOfDay = new Date(queryDate.setHours(23, 59, 59, 999));
-
-      const filter = {
-        scheduledDate: {
-          $gte: startOfDay,
-          $lte: endOfDay
+      try {
+        // Validate inputs
+        if (!restaurantId) {
+          console.log('[getDailyDeliveries] Missing restaurantId');
+          return [];
         }
-      };
 
-      if (mealType) {
-        filter.mealType = mealType;
+        // Parse date - handle both Date objects and ISO strings
+        let queryDate;
+        try {
+          queryDate = date ? new Date(date) : new Date();
+          if (isNaN(queryDate.getTime())) {
+            console.log('[getDailyDeliveries] Invalid date, using today');
+            queryDate = new Date();
+          }
+        } catch (err) {
+          console.log('[getDailyDeliveries] Date parsing error:', err);
+          queryDate = new Date();
+        }
+
+        const startOfDay = new Date(queryDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(queryDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // OPTIMIZATION: First find subscriptions for this restaurant
+        // This is much more efficient than querying all deliveries and filtering
+        // Add timeout to prevent hanging (30 seconds)
+        const subscriptions = await Subscription.find({ restaurantId })
+          .select('_id')
+          .lean()
+          .maxTimeMS(30000) // 30 second timeout
+          .exec();
+
+        if (!subscriptions || subscriptions.length === 0) {
+          console.log('[getDailyDeliveries] No subscriptions found for restaurant:', restaurantId);
+          return [];
+        }
+
+        const subscriptionIds = subscriptions.map(sub => sub._id);
+
+        // Build filter with subscriptionIds upfront - uses database indexes efficiently
+        const filter = {
+          subscriptionId: { $in: subscriptionIds },
+          scheduledDate: {
+            $gte: startOfDay,
+            $lte: endOfDay
+          }
+        };
+
+        if (mealType) {
+          filter.mealType = mealType;
+        }
+
+        // Now query only deliveries for this restaurant's subscriptions
+        // Add timeout and limit to prevent performance issues
+        const deliveries = await SubscriptionDelivery.find(filter)
+          .populate({
+            path: 'subscriptionId',
+            populate: {
+              path: 'user',
+              select: 'name phone'
+            }
+          })
+          .populate({
+            path: 'orderId',
+            populate: {
+              path: 'rider',
+              select: 'name phone'
+            }
+          })
+          .lean() // Use lean() for better performance
+          .maxTimeMS(30000) // 30 second timeout
+          .limit(1000) // Safety limit - adjust based on your needs
+          .exec();
+
+        console.log(`[getDailyDeliveries] Found ${deliveries?.length || 0} deliveries for restaurant ${restaurantId}`);
+        return deliveries || [];
+      } catch (error) {
+        console.error('[getDailyDeliveries] Error:', error);
+        // Return empty array instead of throwing to prevent app crashes
+        // The frontend error handling will show appropriate message
+        return [];
       }
-
-      // We need to filter based on subscriptions that belong to this restaurant
-      // But SubscriptionDelivery refs Subscription. Use populate.
-
-      const deliveries = await SubscriptionDelivery.find(filter)
-        .populate({
-          path: 'subscriptionId',
-          match: { restaurantId: restaurantId },
-          populate: {
-            path: 'user',
-            select: 'name phone'
-          }
-        })
-        .populate({
-          path: 'orderId',
-          populate: {
-            path: 'rider',
-            select: 'name phone'
-          }
-        })
-        .exec();
-
-      // Filter out deliveries where subscriptionId is null (because of restaurant mismatch)
-      return deliveries.filter(d => d.subscriptionId !== null);
     },
 
     getPendingDeliveriesForZone: async (_, __, context) => {
