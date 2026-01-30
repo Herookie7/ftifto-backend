@@ -1647,6 +1647,7 @@ const typeDefs = gql`
     orderStatusChanged(userId: String!): OrderStatusUpdate
     subscriptionNewMessage(order: ID!): ChatMessage
     subscriptionZoneOrders(zoneId: String!): ZoneOrderUpdate
+    subscribePlaceOrder(restaurant: String!): OrderStatusUpdate
   }
 
   input ReviewInput {

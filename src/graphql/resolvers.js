@@ -4714,6 +4714,30 @@ const resolvers = {
       const isCashOrCOD = paymentMethod === 'cash' || paymentMethod?.toLowerCase() === 'cash' || paymentMethod?.toUpperCase() === 'COD';
       const isWallet = paymentMethod && paymentMethod.toLowerCase() === 'wallet';
 
+      // Calculate expected delivery time
+      // orderDate is the scheduled delivery time from the customer
+      const orderDateObj = orderDate ? new Date(orderDate) : new Date();
+      const restaurantDeliveryTime = restaurantDoc.deliveryTime || 30; // Default to 30 minutes if not set
+      
+      // If orderDate is in the past or very soon, add deliveryTime to current time
+      // Otherwise, use orderDate as the expected time
+      const now = new Date();
+      const timeUntilOrderDate = orderDateObj.getTime() - now.getTime();
+      const minTimeMinutes = 5; // Minimum 5 minutes buffer
+      
+      let expectedDeliveryTime;
+      if (timeUntilOrderDate < minTimeMinutes * 60 * 1000) {
+        // Order is scheduled for very soon or past, use current time + deliveryTime
+        expectedDeliveryTime = new Date(now.getTime() + (restaurantDeliveryTime * 60 * 1000));
+      } else {
+        // Order is scheduled for future, use the scheduled time
+        expectedDeliveryTime = orderDateObj;
+      }
+      
+      // preparationTime should be a timestamp (milliseconds) for customer app calculation
+      // expectedTime is a Date object for backend use
+      const preparationTimeTimestamp = expectedDeliveryTime.getTime();
+
       const order = await Order.create({
         restaurant,
         customer: context.user._id,
@@ -4729,11 +4753,13 @@ const resolvers = {
         paymentMethod: paymentMethod || 'cash',
         deliveryAddress: address,
         instructions,
-        orderDate: orderDate ? new Date(orderDate) : new Date(),
+        orderDate: orderDateObj,
         isPickedUp: isPickedUp || false,
         orderStatus: 'pending',
         paymentStatus: (isCashOrCOD || isRazorpay) ? 'pending' : 'paid',
         razorpayOrderId: razorpayOrder ? razorpayOrder.id : undefined,
+        preparationTime: preparationTimeTimestamp, // Set as timestamp for customer app calculation
+        expectedTime: expectedDeliveryTime, // Set as Date for backend use
         timeline: [{
           status: 'pending',
           note: 'Order placed by customer',
@@ -4820,6 +4846,31 @@ const resolvers = {
           currency: razorpayOrder.currency,
           receipt: razorpayOrder.receipt
         };
+      }
+
+      // Notify seller app via GraphQL subscription (subscribePlaceOrder)
+      try {
+        const { bridgePlaceOrder } = require('../graphql/subscriptionBridge');
+        bridgePlaceOrder(restaurant.toString(), {
+          userId: context.user._id.toString(),
+          origin: 'new',
+          order: populatedOrder
+        });
+      } catch (err) {
+        logger.warn('bridgePlaceOrder failed', { error: err?.message });
+      }
+
+      // Push notification to restaurant owner for new order
+      if (restaurantDoc.owner) {
+        const { sendToUser } = require('../services/notifications.service');
+        sendToUser(
+          restaurantDoc.owner,
+          'New Order',
+          'You have a new order #' + (order.orderId || order._id),
+          { type: 'NEW_ORDER', _id: order._id.toString() }
+        ).catch((err) => {
+          logger.error('Failed to send new order notification to seller', { error: err?.message });
+        });
       }
 
       return populatedOrder;
@@ -7995,6 +8046,22 @@ const resolvers = {
       subscribe: async function* (_, { order }) {
         // Register subscription and get channel
         const { channel, cleanup } = registerSubscription('chatMessages', order);
+
+        try {
+          while (true) {
+            const result = await channel.next();
+            if (result.done) break;
+            yield result.value;
+          }
+        } finally {
+          cleanup();
+        }
+      }
+    },
+    subscribePlaceOrder: {
+      subscribe: async function* (_, { restaurant }) {
+        // Register subscription and get channel
+        const { channel, cleanup } = registerSubscription('restaurantOrders', restaurant);
 
         try {
           while (true) {
