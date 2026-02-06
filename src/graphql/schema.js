@@ -342,6 +342,8 @@ const typeDefs = gql`
     zone: Zone
     franchise: Franchise
     razorpayOrder: RazorpayOrder
+    razorpayOrderId: String
+    razorpayPaymentId: String
   }
 
   type RazorpayOrder {
@@ -564,6 +566,7 @@ const typeDefs = gql`
 
   type ChatMessage {
     id: ID
+    _id: ID
     orderId: String
     message: String
     user: User
@@ -1208,6 +1211,11 @@ const typeDefs = gql`
     error: String
   }
 
+  type PopularItemResponse {
+    id: ID
+    count: Int
+  }
+
   enum UserTypeEnum {
     CUSTOMER
     SELLER
@@ -1375,6 +1383,8 @@ const typeDefs = gql`
 
     # Product/Food queries
     popularFoodItems(restaurantId: String!): [Food]
+    popularItems(restaurantId: String!): [PopularItemResponse]
+    relatedItems(itemId: String!, restaurantId: String!): [Food]
     fetchCategoryDetailsByStoreIdForMobile(storeId: String!): [Category]
     restaurantCategories(restaurantId: ID!): [Category]
 

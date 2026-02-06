@@ -792,6 +792,63 @@ const resolvers = {
       }));
     },
 
+    // Popular items with count for customer app
+    async popularItems(_, { restaurantId }) {
+      const mongoose = require('mongoose');
+      const restaurantObjectId = new mongoose.Types.ObjectId(restaurantId);
+      
+      const orders = await Order.aggregate([
+        { $match: { restaurant: restaurantObjectId, isActive: true } },
+        { $unwind: '$items' },
+        { $group: { _id: '$items.food', count: { $sum: '$items.quantity' } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ]);
+
+      return orders.map((o) => ({
+        id: o._id,
+        count: o.count
+      }));
+    },
+
+    // Related items based on category or similar items
+    async relatedItems(_, { itemId, restaurantId }) {
+      // Find the item to get its category
+      const item = await Product.findById(itemId).lean();
+      if (!item) {
+        return [];
+      }
+
+      // Find items from the same category, excluding the current item
+      const relatedProducts = await Product.find({
+        restaurant: restaurantId,
+        _id: { $ne: itemId },
+        isActive: true,
+        available: true,
+        $or: [
+          { category: item.category },
+          { subCategory: item.subCategory }
+        ]
+      })
+        .limit(10)
+        .lean();
+
+      return relatedProducts.map((p) => ({
+        _id: p._id,
+        title: p.title,
+        description: p.description,
+        image: p.image,
+        price: p.price,
+        discountedPrice: p.discountedPrice,
+        subCategory: p.subCategory,
+        isOutOfStock: p.isOutOfStock || !p.available,
+        variations: p.variations || [],
+        isActive: p.isActive,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt
+      }));
+    },
+
     // Category details by store
     async fetchCategoryDetailsByStoreIdForMobile(_, { storeId }) {
       const categories = await Category.find({ restaurant: storeId, isActive: true })
@@ -5653,13 +5710,17 @@ const resolvers = {
 
       // In production, implement chat message storage
       // For now, return a placeholder response
+      const messageId = require('crypto').randomUUID();
       return {
         success: true,
         message: 'Message sent',
         data: {
-          id: require('crypto').randomUUID(),
+          id: messageId,
+          _id: messageId,
+          orderId: orderId,
           message: message.message,
           user: {
+            _id: context.user._id.toString(),
             id: context.user._id.toString(),
             name: context.user.name
           },
