@@ -329,7 +329,7 @@ const typeDefs = gql`
     completionTime: Date
     orderDate: Date
     expectedTime: Date
-    preparationTime: Int
+    preparationTime: Float
     isPickedUp: Boolean
     acceptedAt: Date
     pickedAt: Date
@@ -1097,6 +1097,7 @@ const typeDefs = gql`
     deliveryTime: String
     orderId: ID
     order: Order
+    rider: User
     skipReason: String
     deliveredAt: Date
     notes: String

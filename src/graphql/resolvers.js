@@ -76,7 +76,46 @@ const JSONScalar = new GraphQLScalarType({
   }
 });
 
+const DateScalar = new GraphQLScalarType({
+  name: 'Date',
+  description: 'Date scalar type — serializes to ISO-8601 string, parses from ISO string or timestamp',
+  serialize(value) {
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString();
+      }
+    }
+    return null;
+  },
+  parseValue(value) {
+    if (typeof value === 'string' || typeof value === 'number') {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+    }
+    if (value instanceof Date) {
+      return value;
+    }
+    return null;
+  },
+  parseLiteral(ast) {
+    if (ast.kind === Kind.STRING || ast.kind === Kind.INT) {
+      const date = new Date(ast.kind === Kind.INT ? parseInt(ast.value, 10) : ast.value);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+    }
+    return null;
+  }
+});
+
 const resolvers = {
+  Date: DateScalar,
   JSON: JSONScalar,
   WebNotification: {
     // Map fields for backward compatibility
@@ -91,6 +130,25 @@ const resolvers = {
     }
   },
   Order: {
+    // Sanitize preparationTime: if it's a millisecond timestamp (from a previous bug),
+    // convert it to minutes by calculating from expectedTime or createdAt, else return as-is
+    preparationTime(parent) {
+      const val = parent.preparationTime;
+      if (val == null) return null;
+      // Values over 1440 (24 hours in minutes) are likely corrupted timestamps
+      if (val > 1440) {
+        // Try to derive minutes from expectedTime and createdAt
+        if (parent.expectedTime && parent.createdAt) {
+          const expected = new Date(parent.expectedTime).getTime();
+          const created = new Date(parent.createdAt).getTime();
+          if (expected > created) {
+            return Math.round((expected - created) / 60000); // convert ms diff to minutes
+          }
+        }
+        return 30; // fallback default: 30 minutes
+      }
+      return val;
+    },
     // Resolve zone from restaurant or by zone string/id
     async zone(parent) {
       if (parent.zone) {
@@ -192,7 +250,15 @@ const resolvers = {
           .exec();
 
         console.log(`[getDailyDeliveries] Found ${deliveries?.length || 0} deliveries for restaurant ${restaurantId}`);
-        return deliveries || [];
+        
+        // Map populated orderId to 'order' field (Order object) and restore orderId as scalar ID
+        // Schema: orderId: ID (scalar), order: Order (object)
+        // The populate replaces orderId with the full Order document, so we need to split it
+        return (deliveries || []).map(d => ({
+          ...d,
+          order: d.orderId && typeof d.orderId === 'object' ? d.orderId : null,
+          orderId: d.orderId && typeof d.orderId === 'object' ? (d.orderId._id || d.orderId) : d.orderId
+        }));
       } catch (error) {
         console.error('[getDailyDeliveries] Error:', error);
         // Return empty array instead of throwing to prevent app crashes
@@ -236,13 +302,21 @@ const resolvers = {
       // Filter out those where restaurantId is null (mismatch zone) or subscriptionId null
       const filtered = deliveries.filter(d => d.subscriptionId && d.subscriptionId.restaurantId);
 
-      return filtered;
+      // Map populated orderId to 'order' field and restore orderId as scalar ID
+      return filtered.map(d => {
+        const doc = d.toObject ? d.toObject() : d;
+        return {
+          ...doc,
+          order: doc.orderId && typeof doc.orderId === 'object' ? doc.orderId : null,
+          orderId: doc.orderId && typeof doc.orderId === 'object' ? (doc.orderId._id || doc.orderId) : doc.orderId
+        };
+      });
     },
 
     getRiderAssignments: async (_, __, context) => {
       if (!context.user || context.user.role !== 'rider') throw new Error('Unauthenticated');
 
-      return await SubscriptionDelivery.find({
+      const assignments = await SubscriptionDelivery.find({
         rider: context.user._id,
         status: { $in: ['ASSIGNED', 'DISPATCHED', 'OUT_FOR_DELIVERY'] }
       })
@@ -256,6 +330,16 @@ const resolvers = {
         })
         .populate('orderId')
         .sort({ createdAt: -1 });
+
+      // Map populated orderId to 'order' field and restore orderId as scalar ID
+      return assignments.map(d => {
+        const doc = d.toObject ? d.toObject() : d;
+        return {
+          ...doc,
+          order: doc.orderId && typeof doc.orderId === 'object' ? doc.orderId : null,
+          orderId: doc.orderId && typeof doc.orderId === 'object' ? (doc.orderId._id || doc.orderId) : doc.orderId
+        };
+      });
     },
     getActiveRiders: async (_, __, context) => {
       // Authorization: Admin only
@@ -4791,9 +4875,9 @@ const resolvers = {
         expectedDeliveryTime = orderDateObj;
       }
       
-      // preparationTime should be a timestamp (milliseconds) for customer app calculation
-      // expectedTime is a Date object for backend use
-      const preparationTimeTimestamp = expectedDeliveryTime.getTime();
+      // preparationTime stores the estimated preparation/delivery time in minutes
+      // expectedTime is a Date object for the actual expected delivery timestamp
+      const preparationTimeMinutes = restaurantDeliveryTime; // in minutes (e.g. 30)
 
       const order = await Order.create({
         restaurant,
@@ -4815,8 +4899,8 @@ const resolvers = {
         orderStatus: 'pending',
         paymentStatus: (isCashOrCOD || isRazorpay) ? 'pending' : 'paid',
         razorpayOrderId: razorpayOrder ? razorpayOrder.id : undefined,
-        preparationTime: preparationTimeTimestamp, // Set as timestamp for customer app calculation
-        expectedTime: expectedDeliveryTime, // Set as Date for backend use
+        preparationTime: preparationTimeMinutes, // Estimated prep/delivery time in minutes
+        expectedTime: expectedDeliveryTime, // Expected delivery Date for customer app
         timeline: [{
           status: 'pending',
           note: 'Order placed by customer',
@@ -7602,7 +7686,7 @@ const resolvers = {
     updateDeliveryStatus: async (_, { deliveryId, status, reason }, context) => { // Added reason for Exceptions
       if (!context.user) throw new Error('Unauthenticated');
 
-      const validStatuses = ['SCHEDULED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'SKIPPED', 'CANCELLED'];
+      const validStatuses = ['SCHEDULED', 'PREPARING', 'PREPARED', 'READY', 'ASSIGNED', 'DISPATCHED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'SKIPPED', 'CANCELLED'];
       if (!validStatuses.includes(status)) {
         throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
       }
@@ -7765,35 +7849,25 @@ const resolvers = {
       }
 
       delivery.rider = context.user._id;
-      delivery.status = 'ASSIGNED'; // Or logic to move it to 'ACCEPTED'/'PICKED' based on flow
-      // Let's assume 'DISPATCHED' is next or 'ASSIGNED'. 
-      // Existing flow: Seller marks 'DISPATCHED'. 
-      // If Rider assigns self, maybe status becomes 'ASSIGNED_TO_RIDER'?
-      // Schema status enum: ['PENDING', 'PREPARED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'SKIPPED']
-      // We might need to handle status carefully. 'DISPATCHED' usually means left the restaurant. 
-      // If Rider picks it up, it's 'DISPATCHED'. If Rider just accepts it, it's... ?
-      // Checking SubscriptionDelivery.js schema for status enum...
-      // Assuming 'DISPATCHED' is appropriate when rider takes custody or is handling it. 
-      // Actually, usually:
-      // 1. Seller: Prepared.
-      // 2. Rider: Accepts (Assigned).
-      // 3. Rider: Picks up (Dispatched/In-Transit).
-      // 4. Rider: Delivers (Delivered).
-
-      // If enum is strict, I must check it. 
-      // Schema.js for SubscriptionDelivery says: status: String. Enum not enforced in GraphQL type but usually in Mongoose.
-      // Let's check model.
-
-      delivery.status = 'DISPATCHED'; // Using DISPATCHED as "Rider has it or is handling it" for now.
+      // Flow: SCHEDULED -> PREPARED (seller) -> ASSIGNED (rider accepts) -> DISPATCHED (rider picks up) -> OUT_FOR_DELIVERY -> DELIVERED
+      delivery.status = 'ASSIGNED';
       await delivery.save();
 
-      return await SubscriptionDelivery.findById(deliveryId)
+      const result = await SubscriptionDelivery.findById(deliveryId)
         .populate('rider')
         .populate({
           path: 'subscriptionId',
           populate: { path: 'restaurantId' }
         })
-        .populate('orderId');
+        .populate('orderId')
+        .lean();
+
+      // Map populated orderId to 'order' field and restore orderId as scalar ID
+      return {
+        ...result,
+        order: result.orderId && typeof result.orderId === 'object' ? result.orderId : null,
+        orderId: result.orderId && typeof result.orderId === 'object' ? (result.orderId._id || result.orderId) : result.orderId
+      };
     },
 
 
