@@ -1333,16 +1333,31 @@ const resolvers = {
         .sort({ createdAt: -1 })
         .lean();
 
-      return orders.map(order => ({
-        ...order,
-        id: order._id.toString(),
-        user: order.customer,
-        items: (order.items || []).map(item => ({
-          ...item,
-          id: item._id?.toString() || item._id,
-          food: item.product?.toString() || item.food
-        }))
-      }));
+      return orders.map(order => {
+        // Sanitize preparationTime: values > 1440 min (24h) are likely
+        // corrupted millisecond-timestamps from a previous bug
+        let prepTime = order.preparationTime;
+        if (prepTime != null && prepTime > 1440) {
+          if (order.expectedTime && order.createdAt) {
+            const diff = new Date(order.expectedTime).getTime() - new Date(order.createdAt).getTime();
+            prepTime = diff > 0 ? Math.round(diff / 60000) : 30;
+          } else {
+            prepTime = 30; // fallback default
+          }
+        }
+
+        return {
+          ...order,
+          id: order._id.toString(),
+          user: order.customer,
+          preparationTime: prepTime,
+          items: (order.items || []).map(item => ({
+            ...item,
+            id: item._id?.toString() || item._id,
+            food: item.product?.toString() || item.food
+          }))
+        };
+      });
     },
 
     async lastOrderCreds(_, __, context) {
