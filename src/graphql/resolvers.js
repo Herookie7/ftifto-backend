@@ -21,6 +21,7 @@ const Franchise = require('../models/Franchise');
 const SubscriptionPreference = require('../models/SubscriptionPreference');
 const SubscriptionDelivery = require('../models/SubscriptionDelivery');
 const RewardCoinTransaction = require('../models/RewardCoinTransaction');
+const ChatMessage = require('../models/ChatMessage');
 const { signToken } = require('../utils/token');
 const logger = require('../logger');
 const { addFranchiseScope, getFranchiseForCreation, validateFranchiseMatch } = require('../middleware/franchiseScope');
@@ -1876,9 +1877,18 @@ const resolvers = {
         throw new Error('Access denied');
       }
 
-      // Placeholder - return empty array for now
-      // In production, implement actual chat message storage
-      return [];
+      const messages = await ChatMessage.find({ order })
+        .populate('user', '_id name')
+        .sort({ createdAt: 1 })
+        .lean();
+
+      return messages.map(msg => ({
+        _id: msg._id.toString(),
+        orderId: msg.order.toString(),
+        message: msg.message,
+        user: msg.user ? { _id: msg.user._id.toString(), name: msg.user.name } : null,
+        createdAt: msg.createdAt
+      }));
     },
 
     // Admin app queries
@@ -5807,24 +5817,49 @@ const resolvers = {
         throw new Error('Order not found');
       }
 
-      // In production, implement chat message storage
-      // For now, return a placeholder response
-      const messageId = require('crypto').randomUUID();
+      // Determine sender type
+      const restaurant = await Restaurant.findById(order.restaurant).lean();
+      const isRestaurantOwner = restaurant?.owner?.toString() === context.user._id.toString();
+      const isCustomer = order.customer?.toString() === context.user._id.toString();
+      const isRider = order.rider?.toString() === context.user._id.toString();
+
+      if (!isRestaurantOwner && !isCustomer && !isRider) {
+        throw new Error('Access denied: You are not part of this order');
+      }
+
+      let senderType = 'CUSTOMER';
+      if (isRestaurantOwner) senderType = 'RESTAURANT';
+      else if (isRider) senderType = 'RIDER';
+
+      // Persist the message
+      const chatMsg = await ChatMessage.create({
+        order: orderId,
+        message: message.message,
+        user: context.user._id,
+        senderType
+      });
+
+      const responseData = {
+        id: chatMsg._id.toString(),
+        _id: chatMsg._id.toString(),
+        orderId: orderId,
+        message: chatMsg.message,
+        user: {
+          _id: context.user._id.toString(),
+          id: context.user._id.toString(),
+          name: context.user.name
+        },
+        createdAt: chatMsg.createdAt
+      };
+
+      // Push to real-time subscribers
+      const { bridgeChatMessage } = require('../graphql/subscriptionBridge');
+      bridgeChatMessage(orderId, { subscriptionNewMessage: responseData });
+
       return {
         success: true,
         message: 'Message sent',
-        data: {
-          id: messageId,
-          _id: messageId,
-          orderId: orderId,
-          message: message.message,
-          user: {
-            _id: context.user._id.toString(),
-            id: context.user._id.toString(),
-            name: context.user.name
-          },
-          createdAt: new Date()
-        }
+        data: responseData
       };
     },
 
