@@ -56,7 +56,7 @@ const subscriptionDeliverySchema = new mongoose.Schema(
         menuItems: [deliveryMenuItemSchema],
         status: {
             type: String,
-            enum: ['SCHEDULED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'SKIPPED', 'CANCELLED'],
+            enum: ['SCHEDULED', 'PREPARING', 'PREPARED', 'READY', 'ASSIGNED', 'DISPATCHED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'SKIPPED', 'CANCELLED'],
             default: 'SCHEDULED',
             index: true
         },
@@ -67,6 +67,10 @@ const subscriptionDeliverySchema = new mongoose.Schema(
         orderId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Order'
+        },
+        rider: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
         },
         skipReason: {
             type: String,

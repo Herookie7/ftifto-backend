@@ -19,7 +19,8 @@ const emitOrderUpdate = (orderId, payload) => {
     const orderData = payload.order || payload;
     bridgeOrderUpdate(orderId, orderData);
     if (orderData.customer) {
-      bridgeOrderStatusChange(orderData.customer.toString(), orderData);
+      const customerId = orderData.customer._id || orderData.customer;
+      bridgeOrderStatusChange(String(customerId), orderData);
     }
   } catch (error) {
     // GraphQL subscriptions not initialized yet - ignore

@@ -2916,9 +2916,15 @@ const resolvers = {
       if (restaurantId) {
         const restaurant = await Restaurant.findById(restaurantId).lean();
         if (restaurant && restaurant.subscriptionPricing) {
+          const pricing = restaurant.subscriptionPricing;
+          // Handle both Map (from Mongoose doc) and plain object (from .lean())
+          const getPrice = (key) => {
+            if (typeof pricing.get === 'function') return pricing.get(key) ?? 0;
+            return pricing[key] ?? 0;
+          };
           return basePlans.map(plan => ({
             ...plan,
-            price: restaurant.subscriptionPricing.get(plan.planType) || 0
+            price: getPrice(plan.planType) || 0
           }));
         }
       }
@@ -6374,7 +6380,8 @@ const resolvers = {
 
       // Calculate price (can be customized per restaurant)
       // Assuming base price in DB is for standard 2-meal plan (Lunch+Dinner)
-      const basePrice = restaurant.subscriptionPrice?.[planType] || 0;
+      const pricing = restaurant.subscriptionPricing;
+      const basePrice = (typeof pricing?.get === 'function' ? pricing.get(planType) : pricing?.[planType]) || 0;
       let price = basePrice;
 
       // Scale price if slots != 2
