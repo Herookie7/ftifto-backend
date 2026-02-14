@@ -5858,9 +5858,9 @@ const resolvers = {
         createdAt: chatMsg.createdAt
       };
 
-      // Push to real-time subscribers
+      // Push to real-time subscribers (normalize orderId for Map key consistency)
       const { bridgeChatMessage } = require('../graphql/subscriptionBridge');
-      bridgeChatMessage(orderId, { subscriptionNewMessage: responseData });
+      bridgeChatMessage(String(orderId), { subscriptionNewMessage: responseData });
 
       return {
         success: true,
@@ -8236,8 +8236,8 @@ const resolvers = {
     },
     subscriptionNewMessage: {
       subscribe: async function* (_, { order }) {
-        // Register subscription and get channel
-        const { channel, cleanup } = registerSubscription('chatMessages', order);
+        // Register subscription and get channel (normalize order for Map key consistency)
+        const { channel, cleanup } = registerSubscription('chatMessages', order != null ? String(order) : order);
 
         try {
           while (true) {

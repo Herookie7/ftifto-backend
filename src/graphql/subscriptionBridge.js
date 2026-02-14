@@ -38,7 +38,8 @@ const bridgeOrderStatusChange = (userId, orderData) => {
 };
 
 const bridgeChatMessage = (orderId, messageData) => {
-  const channels = activeSubscriptions.chatMessages.get(orderId);
+  const key = orderId != null ? String(orderId) : orderId;
+  const channels = activeSubscriptions.chatMessages.get(key);
   if (channels) {
     channels.forEach(channel => {
       channel.push(messageData);
@@ -99,22 +100,23 @@ const createChannel = () => {
 const registerSubscription = (type, id) => {
   const map = activeSubscriptions[type];
   const channel = createChannel();
-  
-  if (!map.has(id)) {
-    map.set(id, new Set());
+  const key = id != null ? String(id) : id;
+
+  if (!map.has(key)) {
+    map.set(key, new Set());
   }
-  map.get(id).add(channel);
+  map.get(key).add(channel);
 
   // Return channel and cleanup function
   return {
     channel,
     cleanup: () => {
-      const channels = map.get(id);
+      const channels = map.get(key);
       if (channels) {
         channels.delete(channel);
         channel.return();
         if (channels.size === 0) {
-          map.delete(id);
+          map.delete(key);
         }
       }
     }
