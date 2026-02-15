@@ -5010,13 +5010,15 @@ const resolvers = {
         .populate('rider')
         .lean();
 
-      // Add Razorpay order details to response if applicable
+      // Add Razorpay order details to response if applicable (include key for client SDK)
       if (razorpayOrder && isRazorpay) {
+        const configDoc = await Configuration.getConfiguration();
         populatedOrder.razorpayOrder = {
           id: razorpayOrder.id,
           amount: razorpayOrder.amount,
           currency: razorpayOrder.currency,
-          receipt: razorpayOrder.receipt
+          receipt: razorpayOrder.receipt,
+          key: configDoc?.razorpayKeyId || null
         };
       }
 

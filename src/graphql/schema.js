@@ -351,6 +351,7 @@ const typeDefs = gql`
        amount: Float
        currency: String
        receipt: String
+       key: String
   }
 
   type Configuration {
