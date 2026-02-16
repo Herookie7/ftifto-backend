@@ -571,6 +571,7 @@ const typeDefs = gql`
     orderId: String
     message: String
     user: User
+    senderType: String
     createdAt: Date
   }
 
@@ -1584,6 +1585,7 @@ const typeDefs = gql`
     updateRiderLocation(latitude: String!, longitude: String!): User
     updateRiderLicenseDetails(id: String!, licenseDetails: LicenseDetailsInput): User
     updateRiderVehicleDetails(id: String!, vehicleDetails: VehicleDetailsInput): User
+    updateRiderBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): User
     updateRestaurantBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): UpdateRestaurantResponse
     updateRestaurantInfo(id: String!, restaurantInput: RestaurantInfoInput!): UpdateRestaurantResponse
     updateRestaurantSubscriptionPricing(restaurantId: ID!, pricing: JSON!): Restaurant
@@ -1903,10 +1905,10 @@ const typeDefs = gql`
 
   input RiderInput {
     _id: ID
-    name: String!
-    username: String!
-    password: String!
-    phone: String!
+    name: String
+    username: String
+    password: String
+    phone: String
     zone: ID
     vehicleType: String
     available: Boolean

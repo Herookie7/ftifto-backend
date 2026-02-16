@@ -1887,6 +1887,7 @@ const resolvers = {
         orderId: msg.order.toString(),
         message: msg.message,
         user: msg.user ? { _id: msg.user._id.toString(), name: msg.user.name } : null,
+        senderType: msg.senderType,
         createdAt: msg.createdAt
       }));
     },
@@ -5857,6 +5858,7 @@ const resolvers = {
           id: context.user._id.toString(),
           name: context.user.name
         },
+        senderType,
         createdAt: chatMsg.createdAt
       };
 
@@ -6936,6 +6938,33 @@ const resolvers = {
       return user;
     },
 
+    async updateRiderBussinessDetails(_, { id, bussinessDetails }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      const user = await User.findById(id || context.user._id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (user._id.toString() !== context.user._id.toString()) {
+        throw new Error('You can only update your own details');
+      }
+
+      if (user.role !== 'rider') {
+        throw new Error('User is not a rider');
+      }
+
+      if (!user.metadata) {
+        user.metadata = {};
+      }
+      user.metadata.bussinessDetails = bussinessDetails;
+      await user.save();
+
+      return await User.findById(user._id).populate('zone').lean();
+    },
+
     async updateRestaurantBussinessDetails(_, { id, bussinessDetails }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
@@ -7537,6 +7566,10 @@ const resolvers = {
     async createRider(_, { riderInput }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
+      }
+
+      if (!riderInput.name || !riderInput.username || !riderInput.password || !riderInput.phone) {
+        throw new Error('Name, username, password and phone are required for creating a rider');
       }
 
       // Check if username or phone already exists
