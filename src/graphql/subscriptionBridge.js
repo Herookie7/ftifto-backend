@@ -6,6 +6,7 @@ const activeSubscriptions = {
   orderStatus: new Map(),
   chatMessages: new Map(),
   zoneOrders: new Map(),
+  assignedRider: new Map(),
   restaurantOrders: new Map()
 };
 
@@ -49,6 +50,15 @@ const bridgeChatMessage = (orderId, messageData) => {
 
 const bridgeZoneOrder = (zoneId, orderData) => {
   const channels = activeSubscriptions.zoneOrders.get(zoneId);
+  if (channels) {
+    channels.forEach(channel => {
+      channel.push(orderData);
+    });
+  }
+};
+
+const bridgeAssignedRider = (riderId, orderData) => {
+  const channels = activeSubscriptions.assignedRider.get(String(riderId));
   if (channels) {
     channels.forEach(channel => {
       channel.push(orderData);
@@ -130,6 +140,7 @@ module.exports = {
   bridgeOrderStatusChange,
   bridgeChatMessage,
   bridgeZoneOrder,
+  bridgeAssignedRider,
   bridgePlaceOrder
 };
 

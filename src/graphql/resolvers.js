@@ -5408,6 +5408,22 @@ const resolvers = {
         });
       }
 
+      // Notify the rider who got the assignment
+      const riderId = context.user._id.toString();
+      const { bridgeAssignedRider } = require('../graphql/subscriptionBridge');
+      const populatedOrder = await Order.findById(order._id)
+        .populate('restaurant', '_id name address location')
+        .populate('deliveryAddress')
+        .populate('items')
+        .populate('user', '_id name phone')
+        .populate('rider', '_id name username')
+        .lean();
+      bridgeAssignedRider(riderId, {
+        riderId,
+        origin: 'new',
+        order: populatedOrder
+      });
+
       return await Order.findById(order._id)
         .populate('restaurant')
         .populate('customer')
@@ -5484,6 +5500,19 @@ const resolvers = {
         action: 'status_updated',
         order
       });
+
+      // Notify rider to remove from assigned list when delivered/cancelled
+      if (status === 'delivered' || status === 'cancelled' || status === 'returned' || status === 'not_delivered') {
+        const riderId = order.rider?.toString();
+        if (riderId) {
+          const { bridgeAssignedRider } = require('../graphql/subscriptionBridge');
+          bridgeAssignedRider(riderId, {
+            riderId,
+            origin: 'remove',
+            order: { _id: order._id }
+          });
+        }
+      }
 
       return await Order.findById(order._id)
         .populate('restaurant')
@@ -8228,6 +8257,23 @@ const resolvers = {
         // Register subscription and get channel
         const { channel, cleanup } = registerSubscription('orderStatus', userId);
 
+        try {
+          while (true) {
+            const result = await channel.next();
+            if (result.done) break;
+            yield result.value;
+          }
+        } finally {
+          cleanup();
+        }
+      }
+    },
+    subscriptionAssignRider: {
+      subscribe: async function* (_, { riderId }, context) {
+        if (!context.user || context.user.role !== 'rider') {
+          throw new Error('Authentication required');
+        }
+        const { channel, cleanup } = registerSubscription('assignedRider', riderId);
         try {
           while (true) {
             const result = await channel.next();

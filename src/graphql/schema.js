@@ -1655,12 +1655,19 @@ const typeDefs = gql`
 
   }
 
+  type AssignedRiderUpdate {
+    riderId: String
+    origin: String
+    order: Order
+  }
+
   type Subscription {
     subscriptionOrder(id: String!): Order
     subscriptionRiderLocation(riderId: String!): User
     orderStatusChanged(userId: String!): OrderStatusUpdate
     subscriptionNewMessage(order: ID!): ChatMessage
     subscriptionZoneOrders(zoneId: String!): ZoneOrderUpdate
+    subscriptionAssignRider(riderId: String!): AssignedRiderUpdate
     subscribePlaceOrder(restaurant: String!): OrderStatusUpdate
   }
 
