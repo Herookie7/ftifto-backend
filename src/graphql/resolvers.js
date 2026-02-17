@@ -1077,9 +1077,13 @@ const resolvers = {
       };
     },
 
-    // Orders with pagination
-    async orders(_, { offset = 0 }) {
-      return await Order.find({ isActive: true })
+    // Orders with pagination - scoped to authenticated customer
+    async orders(_, { offset = 0 }, context) {
+      if (!context.user) {
+        throw new Error('Authentication required');
+      }
+
+      return await Order.find({ customer: context.user._id, isActive: true })
         .populate('restaurant')
         .populate('customer')
         .populate('rider')
