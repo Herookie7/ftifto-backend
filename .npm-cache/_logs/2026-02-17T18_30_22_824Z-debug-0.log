@@ -1,0 +1,18 @@
+0 verbose cli /usr/bin/node /usr/bin/npm
+1 info using npm@10.8.2
+2 info using node@v20.20.0
+3 silly config load:file:/usr/lib/node_modules/npm/npmrc
+4 silly config load:file:/media/anoop/Extreme SSD/AndroidStudioProjects/food-delivery-multivendor-main1/food-delivery-multivendor-main/ftifto-backend/.npmrc
+5 silly config load:file:/home/anoop/.npmrc
+6 silly config load:file:/usr/etc/npmrc
+7 verbose title npm test --help
+8 verbose argv "test" "--" "--help"
+9 verbose logfile logs-max:10 dir:/media/anoop/Extreme SSD/AndroidStudioProjects/food-delivery-multivendor-main1/food-delivery-multivendor-main/ftifto-backend/.npm-cache/_logs/2026-02-17T18_30_22_824Z-
+10 verbose logfile /media/anoop/Extreme SSD/AndroidStudioProjects/food-delivery-multivendor-main1/food-delivery-multivendor-main/ftifto-backend/.npm-cache/_logs/2026-02-17T18_30_22_824Z-debug-0.log
+11 silly logfile done cleaning log files
+12 verbose cwd /media/anoop/Extreme SSD/AndroidStudioProjects/food-delivery-multivendor-main1/food-delivery-multivendor-main/ftifto-backend
+13 verbose os Linux 5.15.0-170-generic
+14 verbose node v20.20.0
+15 verbose npm  v10.8.2
+16 verbose exit 0
+17 info ok
