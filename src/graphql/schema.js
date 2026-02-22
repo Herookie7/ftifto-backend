@@ -144,7 +144,7 @@ const typeDefs = gql`
     isSubscriptionAvailable: Boolean
     subscriptionPricing: JSON
     owner: User
-    bussinessDetails: BussinessDetails
+    bussinessDetails: BusinessDetails
     totalWalletAmount: Float
     withdrawnWalletAmount: Float
     currentWalletAmount: Float
@@ -255,7 +255,7 @@ const typeDefs = gql`
     permissions: [String]
     zone: Zone
     restaurants: [Restaurant]
-    bussinessDetails: BussinessDetails
+    businessDetails: BusinessDetails
     licenseDetails: LicenseDetails
     vehicleDetails: VehicleDetails
     # Customer profile fields
@@ -1585,8 +1585,8 @@ const typeDefs = gql`
     updateRiderLocation(latitude: String!, longitude: String!): User
     updateRiderLicenseDetails(id: String!, licenseDetails: LicenseDetailsInput): User
     updateRiderVehicleDetails(id: String!, vehicleDetails: VehicleDetailsInput): User
-    updateRiderBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): User
-    updateRestaurantBussinessDetails(id: String!, bussinessDetails: BussinessDetailsInput): UpdateRestaurantResponse
+    updateRiderBusinessDetails(id: String!, businessDetails: BusinessDetailsInput): User
+    updateRestaurantBusinessDetails(id: String!, businessDetails: BusinessDetailsInput): UpdateRestaurantResponse
     updateRestaurantInfo(id: String!, restaurantInput: RestaurantInfoInput!): UpdateRestaurantResponse
     updateRestaurantSubscriptionPricing(restaurantId: ID!, pricing: JSON!): Restaurant
     updateDeliveryBoundsAndLocation(id: ID!, boundType: String!, bounds: [[[Float!]]], circleBounds: CircleBoundsInput, location: CoordinatesInput!, address: String, postCode: String, city: String): UpdateRestaurantResponse
@@ -1604,7 +1604,7 @@ const typeDefs = gql`
     createRider(riderInput: RiderInput!): User
     editRider(riderInput: RiderInput!): User
     deleteRider(id: String!): User
-    toggleAvailablity(id: String!): User
+    toggleAvailability(id: String!): User
     
     # Admin app mutations
     markWebNotificationsAsRead: [WebNotification]
@@ -1787,7 +1787,7 @@ const typeDefs = gql`
     vehicleImage: String
   }
 
-  type BussinessDetails {
+  type BusinessDetails {
     bankName: String
     accountNumber: String
     accountName: String
@@ -1797,7 +1797,7 @@ const typeDefs = gql`
     taxRate: Float
   }
 
-  input BussinessDetailsInput {
+  input BusinessDetailsInput {
     bankName: String
     accountNumber: String
     accountName: String

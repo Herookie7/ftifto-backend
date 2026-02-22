@@ -251,7 +251,7 @@ const resolvers = {
           .exec();
 
         console.log(`[getDailyDeliveries] Found ${deliveries?.length || 0} deliveries for restaurant ${restaurantId}`);
-        
+
         // Map populated orderId to 'order' field (Order object) and restore orderId as scalar ID
         // Schema: orderId: ID (scalar), order: Order (object)
         // The populate replaces orderId with the full Order document, so we need to split it
@@ -881,7 +881,7 @@ const resolvers = {
     async popularItems(_, { restaurantId }) {
       const mongoose = require('mongoose');
       const restaurantObjectId = new mongoose.Types.ObjectId(restaurantId);
-      
+
       const orders = await Order.aggregate([
         { $match: { restaurant: restaurantObjectId, isActive: true } },
         { $unwind: '$items' },
@@ -3279,9 +3279,9 @@ const resolvers = {
       }
       return [];
     },
-    bussinessDetails: (parent) => {
+    businessDetails: (parent) => {
       // Return from restaurant or user metadata
-      return parent.metadata?.bussinessDetails || null;
+      return parent.metadata?.businessDetails || null;
     },
     licenseDetails: (parent) => {
       return parent.riderProfile?.licenseDetails || null;
@@ -4016,7 +4016,7 @@ const resolvers = {
 
       // First, try to verify using stored OTP (check both specific type and password_reset for email)
       let isValidStoredOTP = verifyOTP(key, otp, type);
-      
+
       // For email, also check password_reset type (used in forgot password flow)
       if (!isValidStoredOTP && email) {
         isValidStoredOTP = verifyOTP(key, otp, 'password_reset');
@@ -4035,9 +4035,9 @@ const resolvers = {
 
       // Fallback to test OTP only in development mode (for testing purposes)
       if (!isProduction && testOtp && otp === testOtp) {
-        logger.warn('OTP verified using test OTP in development mode', { 
-          key: key.replace(/\d(?=\d{4})/g, '*'), 
-          type 
+        logger.warn('OTP verified using test OTP in development mode', {
+          key: key.replace(/\d(?=\d{4})/g, '*'),
+          type
         });
         // Update user verification status
         if (email) {
@@ -4049,8 +4049,8 @@ const resolvers = {
       }
 
       // OTP is invalid
-      logger.warn('Invalid OTP provided', { 
-        key: key.replace(/\d(?=\d{4})/g, '*'), 
+      logger.warn('Invalid OTP provided', {
+        key: key.replace(/\d(?=\d{4})/g, '*'),
         type,
         isProduction,
         providedOtpLength: otp ? otp.length : 0
@@ -4184,7 +4184,7 @@ const resolvers = {
       // If phone is not provided, try to find user by email to get their phone number
       if (!phoneNumber) {
         const user = await User.findOne({ email });
-        
+
         if (!user) {
           // Don't reveal if user exists for security
           return { result: 'success' };
@@ -4224,8 +4224,8 @@ const resolvers = {
 
           // Log phone number normalization
           const cleaned = String(phoneNumber).replace(/\D/g, '');
-          const normalized = cleaned.startsWith('91') && cleaned.length === 12 
-            ? cleaned.slice(2) 
+          const normalized = cleaned.startsWith('91') && cleaned.length === 12
+            ? cleaned.slice(2)
             : cleaned.slice(-10);
           logger.info('Sending email OTP via Fast2SMS', {
             email,
@@ -4238,25 +4238,25 @@ const resolvers = {
           const result = await sendOTP(phoneNumber, otp);
 
           if (result.success) {
-            logger.info('Email OTP sent via Fast2SMS to phone', { 
-              email, 
+            logger.info('Email OTP sent via Fast2SMS to phone', {
+              email,
               phone: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
               requestId: result.requestId
             });
             return { result: 'success' };
           } else {
-            logger.error('Failed to send email OTP via Fast2SMS', { 
-              email, 
+            logger.error('Failed to send email OTP via Fast2SMS', {
+              email,
               phone: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
               error: result.message,
               fast2smsResponse: result
             });
-            
+
             // In production, don't silently fall back to test OTP
             if (isProduction) {
               throw new Error(`Failed to send OTP: ${result.message || 'SMS service error. Please try again or contact support.'}`);
             }
-            
+
             // In development, allow test OTP fallback
             logger.warn('Falling back to test OTP in development mode due to Fast2SMS failure', {
               email,
@@ -4272,31 +4272,31 @@ const resolvers = {
             fast2smsEnabled: fast2smsConfig.enabled,
             hasApiKey: !!fast2smsConfig.apiKey
           });
-          
+
           // In production, throw error if Fast2SMS is not configured
           if (isProduction) {
             throw new Error('OTP service is not configured. Please contact support.');
           }
-          
+
           // In development, use test OTP
           logger.info('Using test OTP for email (development mode - Fast2SMS not configured)', { email });
           storeOTP(email, testOtp, 'email');
           return { result: 'success', otp: testOtp };
         }
       } catch (error) {
-        logger.error('Error sending email OTP to phone number', { 
-          email, 
+        logger.error('Error sending email OTP to phone number', {
+          email,
           phone: phoneNumber ? phoneNumber.replace(/\d(?=\d{4})/g, '*') : 'N/A',
           error: error.message,
           stack: error.stack,
           isProduction
         });
-        
+
         // In production, don't silently fall back to test OTP
         if (isProduction) {
           throw new Error(`Failed to send OTP: ${error.message || 'Please try again or contact support.'}`);
         }
-        
+
         // In development, allow test OTP fallback
         if (configDoc.testOtp) {
           logger.warn('Using test OTP as fallback in development mode due to error', {
@@ -4306,7 +4306,7 @@ const resolvers = {
           storeOTP(email, testOtp, 'email');
           return { result: 'success', otp: testOtp };
         }
-        
+
         throw new Error(`Failed to send OTP: ${error.message || 'Please try again.'}`);
       }
     },
@@ -4327,8 +4327,8 @@ const resolvers = {
 
       // If mobile verification is skipped, return success immediately with test OTP
       if (skipMobileVerification) {
-        logger.info('Mobile verification skipped, returning test OTP', { 
-          phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*') 
+        logger.info('Mobile verification skipped, returning test OTP', {
+          phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*')
         });
         const { storeOTP } = require('../services/otpStorage.service');
         storeOTP(normalizedPhone, testOtp, 'phone');
@@ -4360,8 +4360,8 @@ const resolvers = {
 
           // Log phone number normalization
           const cleaned = String(phone).replace(/\D/g, '');
-          const normalized = cleaned.startsWith('91') && cleaned.length === 12 
-            ? cleaned.slice(2) 
+          const normalized = cleaned.startsWith('91') && cleaned.length === 12
+            ? cleaned.slice(2)
             : cleaned.slice(-10);
           logger.info('Sending phone OTP via Fast2SMS', {
             originalPhone: phone.replace(/\d(?=\d{4})/g, '*'),
@@ -4374,23 +4374,23 @@ const resolvers = {
           const result = await sendOTP(phone, otp);
 
           if (result.success) {
-            logger.info('Phone OTP sent via Fast2SMS', { 
+            logger.info('Phone OTP sent via Fast2SMS', {
               phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'),
               requestId: result.requestId
             });
             return { result: 'success' };
           } else {
-            logger.error('Failed to send OTP via Fast2SMS', { 
-              phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'), 
+            logger.error('Failed to send OTP via Fast2SMS', {
+              phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'),
               error: result.message,
               fast2smsResponse: result
             });
-            
+
             // In production, don't silently fall back to test OTP
             if (isProduction) {
               throw new Error(`Failed to send OTP: ${result.message || 'SMS service error. Please try again or contact support.'}`);
             }
-            
+
             // In development, allow test OTP fallback
             logger.warn('Falling back to test OTP in development mode due to Fast2SMS failure', {
               phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'),
@@ -4406,32 +4406,32 @@ const resolvers = {
             fast2smsEnabled: fast2smsConfig.enabled,
             hasApiKey: !!fast2smsConfig.apiKey
           });
-          
+
           // In production, throw error if Fast2SMS is not configured
           if (isProduction) {
             throw new Error('OTP service is not configured. Please contact support.');
           }
-          
+
           // In development, use test OTP
-          logger.info('Using test OTP for phone (development mode - Fast2SMS not configured)', { 
-            phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*') 
+          logger.info('Using test OTP for phone (development mode - Fast2SMS not configured)', {
+            phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*')
           });
           storeOTP(normalizedPhone, testOtp, 'phone');
           return { result: 'success', otp: testOtp };
         }
       } catch (error) {
-        logger.error('Error sending OTP to phone number', { 
-          phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'), 
+        logger.error('Error sending OTP to phone number', {
+          phone: normalizedPhone.replace(/\d(?=\d{4})/g, '*'),
           error: error.message,
           stack: error.stack,
           isProduction
         });
-        
+
         // In production, don't silently fall back to test OTP
         if (isProduction) {
           throw new Error(`Failed to send OTP: ${error.message || 'Please try again or contact support.'}`);
         }
-        
+
         // In development, allow test OTP fallback
         if (configDoc.testOtp) {
           logger.warn('Using test OTP as fallback in development mode due to error', {
@@ -4441,7 +4441,7 @@ const resolvers = {
           storeOTP(normalizedPhone, testOtp, 'phone');
           return { result: 'success', otp: testOtp };
         }
-        
+
         throw new Error(`Failed to send OTP: ${error.message || 'Please try again.'}`);
       }
     },
@@ -4895,13 +4895,13 @@ const resolvers = {
       // orderDate is the scheduled delivery time from the customer
       const orderDateObj = orderDate ? new Date(orderDate) : new Date();
       const restaurantDeliveryTime = restaurantDoc.deliveryTime || 30; // Default to 30 minutes if not set
-      
+
       // If orderDate is in the past or very soon, add deliveryTime to current time
       // Otherwise, use orderDate as the expected time
       const now = new Date();
       const timeUntilOrderDate = orderDateObj.getTime() - now.getTime();
       const minTimeMinutes = 5; // Minimum 5 minutes buffer
-      
+
       let expectedDeliveryTime;
       if (timeUntilOrderDate < minTimeMinutes * 60 * 1000) {
         // Order is scheduled for very soon or past, use current time + deliveryTime
@@ -4910,7 +4910,7 @@ const resolvers = {
         // Order is scheduled for future, use the scheduled time
         expectedDeliveryTime = orderDateObj;
       }
-      
+
       // preparationTime stores the estimated preparation/delivery time in minutes
       // expectedTime is a Date object for the actual expected delivery timestamp
       const preparationTimeMinutes = restaurantDeliveryTime; // in minutes (e.g. 30)
@@ -5568,8 +5568,8 @@ const resolvers = {
 
           // Log phone number normalization
           const cleaned = String(user.phone).replace(/\D/g, '');
-          const normalized = cleaned.startsWith('91') && cleaned.length === 12 
-            ? cleaned.slice(2) 
+          const normalized = cleaned.startsWith('91') && cleaned.length === 12
+            ? cleaned.slice(2)
             : cleaned.slice(-10);
           logger.info('Sending password reset OTP via Fast2SMS', {
             email,
@@ -5582,25 +5582,25 @@ const resolvers = {
           const result = await sendOTP(user.phone, otp, `Your password reset OTP is ${otp}. Please do not share this OTP with anyone.`);
 
           if (result.success) {
-            logger.info('Password reset OTP sent via Fast2SMS', { 
-              email, 
+            logger.info('Password reset OTP sent via Fast2SMS', {
+              email,
               phone: user.phone.replace(/\d(?=\d{4})/g, '*'),
               requestId: result.requestId
             });
             return { result: 'success' };
           } else {
-            logger.error('Failed to send password reset OTP via Fast2SMS', { 
-              email, 
+            logger.error('Failed to send password reset OTP via Fast2SMS', {
+              email,
               phone: user.phone.replace(/\d(?=\d{4})/g, '*'),
               error: result.message,
               fast2smsResponse: result
             });
-            
+
             // In production, don't silently fall back to test OTP
             if (isProduction) {
               throw new Error(`Failed to send OTP: ${result.message || 'SMS service error. Please try again or contact support.'}`);
             }
-            
+
             // In development, allow test OTP fallback
             logger.warn('Falling back to test OTP in development mode for password reset due to Fast2SMS failure', {
               email,
@@ -5616,31 +5616,31 @@ const resolvers = {
             fast2smsEnabled: fast2smsConfig.enabled,
             hasApiKey: !!fast2smsConfig.apiKey
           });
-          
+
           // In production, throw error if Fast2SMS is not configured
           if (isProduction) {
             throw new Error('OTP service is not configured. Please contact support.');
           }
-          
+
           // In development, use test OTP
           logger.info('Using test OTP for password reset (development mode - Fast2SMS not configured)', { email });
           storeOTP(email, testOtp, 'password_reset');
           return { result: 'success', otp: testOtp };
         }
       } catch (error) {
-        logger.error('Error sending password reset OTP', { 
-          email, 
+        logger.error('Error sending password reset OTP', {
+          email,
           phone: user.phone ? user.phone.replace(/\d(?=\d{4})/g, '*') : 'N/A',
           error: error.message,
           stack: error.stack,
           isProduction
         });
-        
+
         // In production, don't silently fall back to test OTP
         if (isProduction) {
           throw new Error(`Failed to send OTP: ${error.message || 'Please try again or contact support.'}`);
         }
-        
+
         // In development, allow test OTP fallback
         if (configDoc.testOtp) {
           logger.warn('Using test OTP as fallback in development mode for password reset due to error', {
@@ -5650,7 +5650,7 @@ const resolvers = {
           storeOTP(email, testOtp, 'password_reset');
           return { result: 'success', otp: testOtp };
         }
-        
+
         throw new Error(`Failed to send OTP: ${error.message || 'Please try again.'}`);
       }
     },
@@ -6224,7 +6224,7 @@ const resolvers = {
 
       // Generate receipt - Razorpay requires receipt to be max 40 characters
       const receipt = `wt_${Date.now()}`; // wt = wallet topup, shorter format
-      
+
       const options = {
         amount: Math.round(amount * 100), // amount in paisa
         currency: configuration.currency || 'INR',
@@ -6718,8 +6718,8 @@ const resolvers = {
 
       const request = await HolidayRequest.create(requestData);
 
-      const populateFields = context.user.role === 'rider' 
-        ? 'riderId' 
+      const populateFields = context.user.role === 'rider'
+        ? 'riderId'
         : 'customerId';
 
       return await HolidayRequest.findById(request._id)
@@ -6764,7 +6764,7 @@ const resolvers = {
         .populate('customerId', 'name email phone')
         .populate('approvedBy', 'name email')
         .lean();
-      
+
       return populatedRequest;
     },
 
@@ -6971,7 +6971,7 @@ const resolvers = {
       return user;
     },
 
-    async updateRiderBussinessDetails(_, { id, bussinessDetails }, context) {
+    async updateRiderBusinessDetails(_, { id, businessDetails }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -6992,13 +6992,13 @@ const resolvers = {
       if (!user.metadata) {
         user.metadata = {};
       }
-      user.metadata.bussinessDetails = bussinessDetails;
+      user.metadata.businessDetails = businessDetails;
       await user.save();
 
       return await User.findById(user._id).populate('zone').lean();
     },
 
-    async updateRestaurantBussinessDetails(_, { id, bussinessDetails }, context) {
+    async updateRestaurantBusinessDetails(_, { id, businessDetails }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
@@ -7012,7 +7012,7 @@ const resolvers = {
         throw new Error('Restaurant not found or access denied');
       }
 
-      restaurant.bussinessDetails = bussinessDetails;
+      restaurant.businessDetails = businessDetails;
       await restaurant.save();
 
       return {
@@ -7730,7 +7730,7 @@ const resolvers = {
       return rider;
     },
 
-    async toggleAvailablity(_, { id }, context) {
+    async toggleAvailability(_, { id }, context) {
       if (!context.user) {
         throw new Error('Authentication required');
       }
